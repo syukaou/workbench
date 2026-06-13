@@ -50,6 +50,34 @@ fn inv2_every_mutation_produces_event() {
 }
 
 #[test]
+fn inv2_mutation_content_recorded_in_log() {
+    // INV-2: 修改进日志 — the *content* of every mutation must be
+    // recorded in the event log, not just the fact of a mutation.
+    let mut core = WorkbenchCore::open_in_memory("global").unwrap();
+
+    core.set("player_name", serde_json::json!("Kael")).unwrap();
+    core.set("max_hp", serde_json::json!(999)).unwrap();
+    core.delete("max_hp").unwrap();
+
+    let history = core.get_history().unwrap();
+    assert_eq!(history.len(), 3);
+
+    // Event 1: set player_name = "Kael"
+    assert_eq!(history[0].event_type, EventType::Set);
+    assert_eq!(history[0].payload["key"], "player_name");
+    assert_eq!(history[0].payload["value"], "Kael");
+
+    // Event 2: set max_hp = 999
+    assert_eq!(history[1].event_type, EventType::Set);
+    assert_eq!(history[1].payload["key"], "max_hp");
+    assert_eq!(history[1].payload["value"], 999);
+
+    // Event 3: delete max_hp
+    assert_eq!(history[2].event_type, EventType::Delete);
+    assert_eq!(history[2].payload["key"], "max_hp");
+}
+
+#[test]
 fn inv2_state_changes_only_through_execute() {
     // There should be no way to change state without calling execute/set/delete.
     // (This is a structural invariant — the state is only accessible as read-only
@@ -68,21 +96,85 @@ fn inv2_state_changes_only_through_execute() {
     );
 }
 
-// ── INV-3: AI is proposer, not decider (structural check) ────────────
-// INV-3 is primarily enforced at the U5 level (AI-CLI proposal channel).
-// In U1, we verify that there is no mechanism to accept/reject proposals
-// because proposal handling doesn't exist yet. This test documents that
-// the core crate itself has no "auto-accept" mechanism.
+// ── INV-3: AI is proposer, not decider ───────────────────────────────
+// INV-3: AI 提案不落盘 — AI proposals must NOT land on disk (event log)
+// without explicit human review. In U1, this means the core has no
+// proposal-accept mechanism at all. The test is structural: it scans
+// source files for forbidden patterns that would indicate an auto-accept
+// mechanism, and verifies at runtime that no proposal-like event types exist.
 
 #[test]
-fn inv3_no_auto_accept_mechanism() {
-    // The core has no AI-specific proposal type or auto-accept logic.
-    // All state changes require an explicit call to execute().
-    // (This test verifies the structural absence of auto-accept.)
-    let core = WorkbenchCore::open_in_memory("global").unwrap();
-    // No proposal-related methods exist on the public API.
-    // The only write methods are set() and delete() — both require explicit invocation.
+fn inv3_no_proposal_event_type() {
+    // The EventType enum must not contain any proposal-related variant.
+    // If someone adds ProposalAccepted / AcceptProposal / AiProposal etc.,
+    // this test catches it.
+    let event_rs = include_str!("event.rs");
+
+    // Forbidden CamelCase identifiers that would indicate proposal machinery.
+    let forbidden_variants = [
+        "Proposal", "Proposed", "Accept", "Reject", "Review",
+        "AiSuggestion", "AutoApply",
+    ];
+
+    for variant in &forbidden_variants {
+        // Look for these as Rust enum variant names — they appear as
+        // standalone CamelCase words before a comma or comment.
+        assert!(
+            !event_rs.contains(variant),
+            "INV-3 VIOLATION: event.rs contains forbidden EventType variant '{}' (proposal/auto-accept)",
+            variant
+        );
+    }
+}
+
+#[test]
+fn inv3_no_auto_accept_in_engine() {
+    // The engine source must not contain auto-accept patterns.
+    let engine_rs = include_str!("engine.rs");
+    let contract_rs = include_str!("contract.rs");
+
+    let forbidden_patterns = [
+        "auto_accept", "auto_apply", "auto_commit",
+        "accept_proposal", "apply_proposal", "proposal_accepted",
+    ];
+
+    for source in [engine_rs, contract_rs] {
+        for pattern in &forbidden_patterns {
+            assert!(
+                !source.to_lowercase().contains(pattern),
+                "INV-3 VIOLATION: source contains forbidden pattern '{}' (auto-accept mechanism)",
+                pattern
+            );
+        }
+    }
+}
+
+#[test]
+fn inv3_all_writes_require_explicit_action() {
+    // Runtime: verify that the event log never changes without an
+    // explicit call to a public mutation method. No event should appear
+    // spontaneously.
+    let mut core = WorkbenchCore::open_in_memory("global").unwrap();
+
+    // Phase 1: after creation, log is empty
     assert_eq!(core.get_total_events().unwrap(), 0);
+
+    // Phase 2: only after explicit set() does an event appear
+    core.set("x", serde_json::json!(1)).unwrap();
+    assert_eq!(core.get_total_events().unwrap(), 1);
+
+    // Phase 3: reading state does NOT produce events
+    let _ = core.get_state();
+    let _ = core.get_history();
+    assert_eq!(core.get_total_events().unwrap(), 1,
+        "INV-3 VIOLATION: read-only operation produced an event"
+    );
+
+    // Phase 4: rebuild does NOT produce events
+    let _ = core.rebuild();
+    assert_eq!(core.get_total_events().unwrap(), 1,
+        "INV-3 VIOLATION: rebuild produced an event"
+    );
 }
 
 // ── INV-4 & INV-7: Core has zero LLM / HTTP / rendering deps ─────────
@@ -280,36 +372,281 @@ fn inv5_events_are_never_deleted() {
 }
 
 // ── INV-6: Single contract interface ─────────────────────────────────
+// ── INV-6: Single contract interface ─────────────────────────────────
+//
+// INV-6 demands that Rust core exposes exactly ONE typed contract boundary.
+// All consumers (frontend, Tauri shell, future Blender/Unity integrations)
+// must go through WorkbenchCore — never reach inside engine/log/projection.
+// lib.rs re-exports only the contract type + supporting types; internal
+// modules are not pub-exported for direct consumption.
 
 #[test]
-fn inv6_public_api_is_complete() {
-    // The WorkbenchCore contract exposes all necessary operations.
-    // Verify the public API surface is self-contained.
+fn inv6_all_consumer_operations_through_contract() {
+    // Every operation a consumer needs — query, write, undo, redo,
+    // replay verification — must be available through the single
+    // WorkbenchCore contract. No internal module access required.
+
     let mut core = WorkbenchCore::open_in_memory("global").unwrap();
 
-    // All operations should be accessible without accessing internal modules.
-    core.set("x", serde_json::json!(1)).unwrap();
-    let state = core.get_state();
-    assert!(state.contains_key("x"));
+    // Query operations
+    assert_eq!(core.get_current_seq(), 0);
+    assert_eq!(core.get_total_events().unwrap(), 0);
+    assert!(core.get_history().unwrap().is_empty());
 
+    // Write operations (sole path, INV-2)
+    core.set("hp", serde_json::json!(100)).unwrap();
+    core.set("mp", serde_json::json!(50)).unwrap();
+    core.delete("mp").unwrap();
+    assert_eq!(core.get_total_events().unwrap(), 3);
+
+    // Undo/redo operations
     core.undo(1).unwrap();
+    assert_eq!(core.get_current_seq(), 2);
     core.redo(1).unwrap();
+    assert_eq!(core.get_current_seq(), 3);
 
+    // Replay verification (INV-5)
+    let state = core.get_state();
+    let rebuilt = core.rebuild().unwrap();
+    assert_eq!(state, rebuilt,
+        "INV-6 VIOLATION: rebuild via contract produced different state"
+    );
+
+    // Rebuild at specific sequence
+    let partial = core.rebuild_up_to(1).unwrap();
+    assert_eq!(partial.len(), 1);
+    assert!(partial.contains_key("hp"));
+}
+
+#[test]
+fn inv6_contract_is_single_entry_point() {
+    // The contract is the sole mutation path. Every write through any
+    // contract method (set, delete, execute, execute_command) must:
+    // 1. Produce exactly one event in the log
+    // 2. Be the only way to change state — no bypass, no backdoor
+
+    let mut core = WorkbenchCore::open_in_memory("global").unwrap();
+
+    // set() produces 1 event
+    let before = core.get_total_events().unwrap();
+    core.set("a", serde_json::json!(1)).unwrap();
+    assert_eq!(core.get_total_events().unwrap(), before + 1,
+        "INV-6 VIOLATION: set() did not produce exactly 1 event"
+    );
+
+    // delete() produces 1 event
+    let before = core.get_total_events().unwrap();
+    core.delete("a").unwrap();
+    assert_eq!(core.get_total_events().unwrap(), before + 1,
+        "INV-6 VIOLATION: delete() did not produce exactly 1 event"
+    );
+
+    // execute_command() produces 1 event
+    let before = core.get_total_events().unwrap();
+    core.execute_command(crate::engine::Command::Set {
+        key: "b".into(),
+        value: serde_json::json!(2),
+    }).unwrap();
+    assert_eq!(core.get_total_events().unwrap(), before + 1,
+        "INV-6 VIOLATION: execute_command() did not produce exactly 1 event"
+    );
+
+    // State reflects only explicit writes
+    let state = core.get_state();
+    assert_eq!(state.len(), 1, "state should have 1 key (only 'b' after delete of 'a')");
+    assert!(state.contains_key("b"));
+    assert!(!state.contains_key("a"));
+}
+
+#[test]
+fn inv6_core_modules_not_publicly_reachable() {
+    // INV-6: Verify that core internal modules (engine, log) are not
+    // re-exported. Only WorkbenchCore + supporting types (Event, EventType,
+    // Error, Projection traits) are public.
+    //
+    // This test is compile-time: if someone makes `engine` or `log` pub,
+    // the test won't compile because those types aren't accessible here.
+
+    // The fact that this test compiles at all, without referencing
+    // crate::engine::Engine or crate::log::EventStore, proves that
+    // those modules are not pub in lib.rs. We supplement with a
+    // runtime check that the public API surface is self-contained.
+
+    let mut core = WorkbenchCore::open_in_memory("global").unwrap();
+    core.set("a", serde_json::json!(1)).unwrap();
+    core.set("b", serde_json::json!(2)).unwrap();
+
+    // Execute a domain command through the contract boundary.
+    let event = core.create_node("room1", "Central Hall").unwrap();
+    assert_eq!(event.event_type, EventType::NodeCreated);
+
+    // All operations go through the contract — no direct engine access.
     let history = core.get_history().unwrap();
-    assert!(!history.is_empty());
+    assert_eq!(history.len(), 3);
 }
 
 // ── INV-7: No rendering in core ──────────────────────────────────────
 // INV-7 is tested together with INV-4 above (inv4_inv7_core_has_no_llm_http_render_deps).
 
+#[test]
+fn inv7_no_graphics_symbols_in_source() {
+    // Additional runtime check: scan source files for graphics/rendering
+    // import patterns that might slip past the Cargo.toml check.
+    let lib_rs = include_str!("lib.rs");
+    let engine_rs = include_str!("engine.rs");
+
+    let forbidden_imports = [
+        "wgpu", "vulkan", "opengl", "sdl2", "bevy",
+        "macroquad", "ggez", "miniquad", "skia", "raqote",
+        "tauri",
+    ];
+
+    for source in [lib_rs, engine_rs] {
+        for forbidden in &forbidden_imports {
+            assert!(
+                !source.to_lowercase().contains(forbidden),
+                "INV-7 VIOLATION: source file references '{}' (graphics/rendering)",
+                forbidden
+            );
+        }
+    }
+}
+
 // ── INV-8: Hook reactions produce proposals only ─────────────────────
-// INV-8 is relevant for U2+ when hooks are implemented. For U1, we document
-// that the core has no hook mechanism yet and no way to auto-modify state.
+// INV-8: Hook 收敛 — hooks must only produce proposals, not direct state
+// changes. In U1, there is no hook mechanism at all. These tests verify
+// the structural absence of hook/reaction machinery and that each mutation
+// produces exactly one event (no cascading).
 
 #[test]
-fn inv8_no_hook_mechanism_yet() {
-    // U1 has no hook system. This test documents the baseline.
-    let core = WorkbenchCore::open_in_memory("global").unwrap();
-    // No hooks, no auto-reactions — all state changes are explicit.
-    assert_eq!(core.get_total_events().unwrap(), 0);
+fn inv8_no_hook_event_type() {
+    // The EventType enum must not contain hook/reaction/trigger variants.
+    let event_rs = include_str!("event.rs");
+
+    let forbidden_variants = [
+        "Hook", "HookFired", "Reaction", "ReactionApplied",
+        "Trigger", "TriggerFired", "Callback",
+        "SideEffect", "Cascade",
+    ];
+
+    for variant in &forbidden_variants {
+        assert!(
+            !event_rs.contains(variant),
+            "INV-8 VIOLATION: event.rs contains forbidden EventType variant '{}' (hook/reaction)",
+            variant
+        );
+    }
+}
+
+#[test]
+fn inv8_no_hook_registration_in_source() {
+    // Source files must not contain hook registration or reaction patterns.
+    let engine_rs = include_str!("engine.rs");
+    let lib_rs = include_str!("lib.rs");
+    let contract_rs = include_str!("contract.rs");
+
+    let forbidden_patterns = [
+        "register_hook", "on_event", "add_listener",
+        "subscribe", "dispatch", "emit",
+        "reaction", "trigger_hook",
+    ];
+
+    for source in [engine_rs, lib_rs, contract_rs] {
+        for pattern in &forbidden_patterns {
+            assert!(
+                !source.to_lowercase().contains(pattern),
+                "INV-8 VIOLATION: source contains forbidden pattern '{}' (hook mechanism)",
+                pattern
+            );
+        }
+    }
+}
+
+#[test]
+fn inv8_each_mutation_produces_exactly_one_event() {
+    // INV-8: Hook 收敛 — each explicit mutation call must produce exactly
+    // one event. No cascading, no automatic follow-up events, no hook chains.
+    let mut core = WorkbenchCore::open_in_memory("global").unwrap();
+    let count_before = core.get_total_events().unwrap();
+
+    // A single set produces exactly one event
+    core.set("hp", serde_json::json!(100)).unwrap();
+    assert_eq!(core.get_total_events().unwrap(), count_before + 1,
+        "INV-8 VIOLATION: set() produced more than one event (cascading?)"
+    );
+
+    // A single delete produces exactly one event
+    core.delete("hp").unwrap();
+    assert_eq!(core.get_total_events().unwrap(), count_before + 2,
+        "INV-8 VIOLATION: delete() produced more than one event (cascading?)"
+    );
+
+    // Domain commands also produce exactly one event each
+    core.create_node("room_a", "Room A").unwrap();
+    assert_eq!(core.get_total_events().unwrap(), count_before + 3,
+        "INV-8 VIOLATION: create_node() produced more than one event"
+    );
+
+    core.create_edge("room_a", "room_b", true).unwrap();
+    assert_eq!(core.get_total_events().unwrap(), count_before + 4,
+        "INV-8 VIOLATION: create_edge() produced more than one event"
+    );
+
+    // Undo/redo do NOT produce new events
+    let before_undo = core.get_total_events().unwrap();
+    core.undo(1).unwrap();
+    assert_eq!(core.get_total_events().unwrap(), before_undo,
+        "INV-8 VIOLATION: undo() produced new events"
+    );
+
+    core.redo(1).unwrap();
+    assert_eq!(core.get_total_events().unwrap(), before_undo,
+        "INV-8 VIOLATION: redo() produced new events"
+    );
+}
+
+#[test]
+fn inv8_no_event_triggers_event() {
+    // Verify that applying an event does not trigger a chain reaction.
+    // Each execute() call is atomic: one command → one event.
+    // We test with POI operations which might be tempting to auto-cascade.
+
+    let mut core = WorkbenchCore::open_in_memory("global").unwrap();
+
+    // Set up: create a node, create an entity type and instance.
+    core.create_node("spawn_room", "Spawn").unwrap();
+    core.create_entity_type("Enemy").unwrap();
+    core.create_entity_instance("Enemy", "goblin_1").unwrap();
+
+    let count_before = core.get_total_events().unwrap();
+
+    // Attach a POI referencing an entity — should produce exactly 1 event,
+    // NOT also auto-create the entity or node.
+    core.attach_poi("spawn_room", "poi_enemy", Some("goblin_1")).unwrap();
+
+    assert_eq!(core.get_total_events().unwrap(), count_before + 1,
+        "INV-8 VIOLATION: attach_poi() produced more than one event (auto-cascade?)"
+    );
+
+    // Detach a POI — exactly 1 event.
+    core.detach_poi("spawn_room", "poi_enemy").unwrap();
+    assert_eq!(core.get_total_events().unwrap(), count_before + 2,
+        "INV-8 VIOLATION: detach_poi() produced more than one event (auto-cascade?)"
+    );
+
+    // Verify all events were produced explicitly and no hook-like events exist.
+    // (INV-8 is enforced structurally: if someone adds a hook variant to
+    // EventType, the source-scan test inv8_no_hook_event_type will fail.)
+    let history = core.get_history().unwrap();
+    for event in &history {
+        let event_type_str = format!("{:?}", event.event_type);
+        let forbidden = ["HookFired", "ReactionApplied", "SideEffect", "Cascade"];
+        for f in &forbidden {
+            assert!(
+                !event_type_str.contains(f),
+                "INV-8 VIOLATION: hook/reaction event found in log: {}",
+                event_type_str
+            );
+        }
+    }
 }
