@@ -11,6 +11,7 @@ pub mod log;
 pub mod projection;
 pub mod engine;
 pub mod contract;
+pub mod cli_bridge;
 
 // Re-export the public API.
 pub use contract::WorkbenchCore;
