@@ -16,19 +16,22 @@ import {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import type { GraphState, RoomNode } from './types';
+import PoiNode from './PoiNode';
 
 interface Props {
   state: GraphState;
   onStateChange: (state: GraphState) => void;
   onToggleEdge: (from: string, to: string) => void;
-  onNodeClick: (nodeId: string) => void;
+  onNodeSelect: (nodeId: string | null) => void;
 }
+
+const nodeTypes = { poiNode: PoiNode };
 
 /** Convert U3 rooms to React Flow nodes. */
 function roomsToNodes(rooms: RoomNode[]): Node[] {
   return rooms.map((r) => ({
     id: r.node_id,
-    type: 'default',
+    type: 'poiNode',
     position: { x: r.x, y: r.y },
     data: {
       label: r.label,
@@ -57,7 +60,7 @@ function edgesToRFEdges(edges: { from_node: string; to_node: string; bidirection
   });
 }
 
-export default function TopologyGraph({ state, onStateChange, onToggleEdge, onNodeClick }: Props) {
+export default function TopologyGraph({ state, onStateChange, onToggleEdge, onNodeSelect }: Props) {
   const [nodes, setNodes, onNodesChangeRF] = useNodesState(roomsToNodes(state.rooms));
   const [edges, setEdges, onEdgesChangeRF] = useEdgesState(edgesToRFEdges(state.edges));
 
@@ -133,9 +136,10 @@ export default function TopologyGraph({ state, onStateChange, onToggleEdge, onNo
 
   const onNodeDoubleClick: NodeMouseHandler = useCallback(
     (_event, node) => {
-      onNodeClick(node.id);
+      // Single click: select node for POI editing
+      onNodeSelect(node.id);
     },
-    [onNodeClick],
+    [onNodeSelect],
   );
 
   return (
@@ -143,12 +147,13 @@ export default function TopologyGraph({ state, onStateChange, onToggleEdge, onNo
       <ReactFlow
         nodes={nodes}
         edges={edges}
+        nodeTypes={nodeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onPaneClick={onPaneClick}
         onEdgeContextMenu={onEdgeContext}
-        onNodeDoubleClick={onNodeDoubleClick}
+        onNodeClick={onNodeDoubleClick}
         fitView
         deleteKeyCode={null}
       >

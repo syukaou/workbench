@@ -1,8 +1,17 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import TopologyGraph from './TopologyGraph';
 import Toolbar from './Toolbar';
-import { loadState, executeCommand, loadMockState, setPosition, requestProposal } from './mockData';
-import type { GraphState } from './types';
+import PoiEditor from './PoiEditor';
+import {
+  loadState,
+  executeCommand,
+  loadMockState,
+  setPosition,
+  requestProposal,
+  getEntityState,
+  executeCoreCommand,
+} from './mockData';
+import type { GraphState, EntityState } from './types';
 import './App.css';
 
 export default function App() {
@@ -15,9 +24,16 @@ export default function App() {
   const [canRedo, setCanRedo] = useState(false);
   const edgeSourceRef = useRef<string | null>(null);
 
+  // ── POI Editor state ──────────────────────────────────────────────
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [entityState, setEntityState] = useState<EntityState>({ types: [], instances: [] });
+
   // ── AI Proposal state ──────────────────────────────────────────────
   const [proposals, setProposals] = useState<Record<string, unknown>[] | null>(null);
   const [proposalLoading, setProposalLoading] = useState(false);
+
+  // ── POI counter ───────────────────────────────────────────────────
+  let poiCounterRef = useRef(0);
 
   // ── Init: load from WASM core (fallback to mock) ──────────────────
 
@@ -29,6 +45,11 @@ export default function App() {
         if (!cancelled) {
           setState(graphState);
           setCoreReady(true);
+          // Load entity state
+          try {
+            const es = getEntityState();
+            setEntityState(es);
+          } catch { /* entity state unavailable */ }
         }
       } catch {
         // WASM unavailable — fall back to mock data
@@ -41,6 +62,18 @@ export default function App() {
     init();
     return () => { cancelled = true; };
   }, []);
+
+  // ── Refresh all state from core ───────────────────────────────────
+
+  const refreshState = useCallback(async () => {
+    if (!coreReady) return;
+    try {
+      const freshState = await loadState();
+      setState(freshState);
+      const es = getEntityState();
+      setEntityState(es);
+    } catch { /* keep current state */ }
+  }, [coreReady]);
 
   // ── Undo/redo ─────────────────────────────────────────────────────
 
@@ -86,18 +119,14 @@ export default function App() {
         return;
       }
 
-      // Detect what changed and send corresponding command
       try {
-        // New rooms
         for (const room of newState.rooms) {
           const oldRoom = state.rooms.find((r) => r.node_id === room.node_id);
           if (!oldRoom) {
-            // New room: send CreateNode + update position cache
             await executeCommand({ CreateNode: { node_id: room.node_id, label: room.label } });
             setPosition(room.node_id, room.x, room.y);
           }
         }
-        // New edges
         for (const edge of newState.edges) {
           const oldEdge = state.edges.find(
             (e) => e.from_node === edge.from_node && e.to_node === edge.to_node,
@@ -122,7 +151,7 @@ export default function App() {
     [state, pushUndo, coreReady],
   );
 
-  // ── Toggle edge (UI-only for now) ─────────────────────────────────
+  // ── Toggle edge ───────────────────────────────────────────────────
 
   const handleToggleEdge = useCallback(
     (from: string, to: string) => {
@@ -163,7 +192,6 @@ export default function App() {
               ...state,
               edges: [...state.edges, newEdge],
             });
-            // Sync to core
             if (coreReady) {
               executeCommand({
                 CreateEdge: { from_node: from, to_node: to, bidirectional: true },
@@ -176,6 +204,92 @@ export default function App() {
       }
     },
     [mode, state, pushUndo, coreReady],
+  );
+
+  // ── Node select (POI editor) ──────────────────────────────────────
+
+  const handleNodeSelect = useCallback((nodeId: string | null) => {
+    if (mode === 'add_edge') {
+      // In add_edge mode, treat as edge endpoint selection
+      if (nodeId) handleNodeClick(nodeId);
+      return;
+    }
+    setSelectedNodeId(nodeId);
+    // Refresh entity state
+    if (coreReady && nodeId) {
+      try {
+        const es = getEntityState();
+        setEntityState(es);
+      } catch { /* ignore */ }
+    }
+  }, [mode, handleNodeClick, coreReady]);
+
+  // ── POI operations ────────────────────────────────────────────────
+
+  const handleAttachPoi = useCallback(
+    (nodeId: string, poiId: string, entityRef: string | null) => {
+      executeCoreCommand({
+        AttachPOI: { node_id: nodeId, poi_id: poiId, entity_ref: entityRef ?? null },
+      });
+      refreshState();
+    },
+    [refreshState],
+  );
+
+  const handleDetachPoi = useCallback(
+    (nodeId: string, poiId: string) => {
+      executeCoreCommand({
+        DetachPOI: { node_id: nodeId, poi_id: poiId },
+      });
+      refreshState();
+    },
+    [refreshState],
+  );
+
+  const handleSetField = useCallback(
+    (instanceId: string, field: string, value: unknown) => {
+      executeCoreCommand({
+        SetEntityField: { instance_id: instanceId, field, value },
+      });
+      refreshState();
+    },
+    [refreshState],
+  );
+
+  const handleCreateInstanceAndAttach = useCallback(
+    (nodeId: string, poiId: string, entityType: string, fields: Record<string, string>) => {
+      poiCounterRef.current++;
+      const instanceId = `inst-${poiCounterRef.current}-${poiId}`;
+
+      // Create instance
+      const r1 = executeCoreCommand({
+        CreateEntityInstance: { entity_type: entityType, instance_id: instanceId },
+      });
+      if (!r1.ok) {
+        console.warn('CreateEntityInstance failed:', r1.error);
+        return;
+      }
+
+      // Set fields
+      for (const [field, value] of Object.entries(fields)) {
+        if (value) {
+          executeCoreCommand({
+            SetEntityField: { instance_id: instanceId, field, value },
+          });
+        }
+      }
+
+      // Attach POI
+      const r2 = executeCoreCommand({
+        AttachPOI: { node_id: nodeId, poi_id: poiId, entity_ref: instanceId },
+      });
+      if (!r2.ok) {
+        console.warn('AttachPOI failed:', r2.error);
+      }
+
+      refreshState();
+    },
+    [refreshState],
   );
 
   // ── AI Proposal handlers ──────────────────────────────────────────
@@ -196,7 +310,6 @@ export default function App() {
 
   const handleAcceptProposals = useCallback(async () => {
     if (!proposals || !state) return;
-    // Execute all proposals sequentially
     const newCommands = [...proposals];
     setProposals(null);
     for (const cmd of newCommands) {
@@ -207,7 +320,6 @@ export default function App() {
         console.warn('Command execution failed:', err);
       }
     }
-    // Reload complete state from core
     if (coreReady) {
       try {
         const freshState = await loadState();
@@ -225,7 +337,6 @@ export default function App() {
     try {
       const updatedState = await executeCommand(cmd);
       setState(updatedState);
-      // Remove from proposals
       setProposals((prev) => prev?.filter((c) => c !== cmd) ?? null);
     } catch (err) {
       console.warn('Command execution failed:', err);
@@ -248,6 +359,12 @@ export default function App() {
     );
   }
 
+  // ── Selected node for POI editor ──────────────────────────────────
+
+  const selectedNode = selectedNodeId
+    ? state.rooms.find((r) => r.node_id === selectedNodeId) ?? null
+    : null;
+
   // ── Render ────────────────────────────────────────────────────────
 
   return (
@@ -269,12 +386,27 @@ export default function App() {
         onAcceptSingle={handleAcceptSingle}
         onRejectSingle={handleRejectSingle}
       />
-      <TopologyGraph
-        state={state}
-        onStateChange={handleStateChange}
-        onToggleEdge={handleToggleEdge}
-        onNodeClick={handleNodeClick}
-      />
+      <div className="main-area">
+        <TopologyGraph
+          state={state}
+          onStateChange={handleStateChange}
+          onToggleEdge={handleToggleEdge}
+          onNodeSelect={handleNodeSelect}
+        />
+        {selectedNode && (
+          <PoiEditor
+            nodeId={selectedNode.node_id}
+            nodeLabel={selectedNode.label}
+            pois={selectedNode.pois}
+            entityState={entityState}
+            onAttachPoi={handleAttachPoi}
+            onDetachPoi={handleDetachPoi}
+            onSetField={handleSetField}
+            onCreateInstanceAndAttach={handleCreateInstanceAndAttach}
+            onClose={() => setSelectedNodeId(null)}
+          />
+        )}
+      </div>
     </div>
   );
 }

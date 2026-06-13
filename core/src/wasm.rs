@@ -37,6 +37,15 @@ fn ensure_core() {
 ///   Entrance Hall ↔ Library (bidirectional)
 ///   Garden → Vault (one-way shortcut)
 fn seed_topology(core: &mut WorkbenchCore) {
+    // ── U2: Entity types ─────────────────────────────────────────────
+    core.create_entity_type("Boss")
+        .expect("seed: create entity type Boss");
+    core.create_entity_type("Item")
+        .expect("seed: create entity type Item");
+    core.create_entity_type("NPC")
+        .expect("seed: create entity type NPC");
+
+    // ── U3: Topology nodes ───────────────────────────────────────────
     // Create 5 rooms
     core.create_node("entrance", "Entrance Hall")
         .expect("seed: create entrance");
@@ -270,6 +279,31 @@ fn parse_command(val: &serde_json::Value) -> Result<Command, String> {
             let node_id = get_str("node_id")?;
             let poi_id = get_str("poi_id")?;
             Ok(Command::DetachPOI { node_id, poi_id })
+        }
+        "CreateEntityType" => {
+            let name = get_str("name")?;
+            Ok(Command::CreateEntityType { name })
+        }
+        "CreateEntityInstance" => {
+            let entity_type = get_str("entity_type")?;
+            let instance_id = get_str("instance_id")?;
+            Ok(Command::CreateEntityInstance {
+                entity_type,
+                instance_id,
+            })
+        }
+        "SetEntityField" => {
+            let instance_id = get_str("instance_id")?;
+            let field = get_str("field")?;
+            let value = params
+                .get("value")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
+            Ok(Command::SetEntityField {
+                instance_id,
+                field,
+                value,
+            })
         }
         _ => Err(format!("Unknown command variant: {}", variant_name)),
     }

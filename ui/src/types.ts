@@ -25,6 +25,24 @@ export interface GraphState {
   edges: EdgeDef[];
 }
 
+/** U2 entity types and instances (from core state). */
+
+export interface EntityTypeInfo {
+  name: string;
+  fields: Record<string, unknown>;
+}
+
+export interface EntityInstanceInfo {
+  instance_id: string;
+  type: string;
+  fields: Record<string, unknown>;
+}
+
+export interface EntityState {
+  types: EntityTypeInfo[];
+  instances: EntityInstanceInfo[];
+}
+
 /** Actions for the undo/redo stack */
 export interface GraphAction {
   type: 'add_node' | 'add_edge' | 'remove_node' | 'remove_edge' | 'toggle_edge_direction';

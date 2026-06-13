@@ -4,8 +4,11 @@
  * The Rust core stores only topology (nodes, edges, marks, POIs).
  * UI positions (x, y) are managed locally in React state.
  */
-import type { GraphState, RoomNode, EdgeDef } from './types';
+import type { GraphState, RoomNode, EdgeDef, EntityState, EntityTypeInfo, EntityInstanceInfo } from './types';
 import { ensureCore, getCoreState, executeCoreCommand, proposeViaCore } from './coreBridge';
+
+// Re-export executeCoreCommand for direct use by App
+export { executeCoreCommand };
 
 // ── Local position store (not in core) ───────────────────────────────
 
@@ -95,6 +98,73 @@ export async function executeCommand(cmdObj: Record<string, unknown>): Promise<G
   // Reload full state from core after mutation
   const coreState = getCoreState();
   return coreStateToGraphState(coreState);
+}
+
+// ── Entity state extraction ────────────────────────────────────────────
+
+/** Extract entity types from core state. */
+export function extractEntityTypes(coreState: Record<string, unknown>): EntityTypeInfo[] {
+  const types: EntityTypeInfo[] = [];
+  for (const [key, value] of Object.entries(coreState)) {
+    if (key.startsWith('entity_type:')) {
+      const name = key.slice('entity_type:'.length);
+      const data = value as Record<string, unknown>;
+      types.push({
+        name,
+        fields: (data.fields as Record<string, unknown>) ?? {},
+      });
+    }
+  }
+  return types;
+}
+
+/** Extract entity instances from core state. */
+export function extractEntityInstances(coreState: Record<string, unknown>): EntityInstanceInfo[] {
+  const instances: EntityInstanceInfo[] = [];
+  for (const [key, value] of Object.entries(coreState)) {
+    if (key.startsWith('entity_instance:')) {
+      const instance_id = key.slice('entity_instance:'.length);
+      const data = value as Record<string, unknown>;
+      instances.push({
+        instance_id,
+        type: (data.type as string) ?? 'unknown',
+        fields: (data.fields as Record<string, unknown>) ?? {},
+      });
+    }
+  }
+  return instances;
+}
+
+/** Get the current entity state from core. */
+export function getEntityState(): EntityState {
+  const coreState = getCoreState();
+  return {
+    types: extractEntityTypes(coreState),
+    instances: extractEntityInstances(coreState),
+  };
+}
+
+/** Load initial entity state from WASM. */
+export async function loadEntityState(): Promise<EntityState> {
+  await ensureCore();
+  return getEntityState();
+}
+
+// ── Entity command helpers ─────────────────────────────────────────────
+
+/** Create an entity type. */
+export function createEntityType(name: string): { ok: boolean; error?: string } {
+  return executeCoreCommand({ CreateEntityType: { name } });
+}
+
+/** Create an entity instance. */
+export function createEntityInstance(entity_type: string, instance_id: string): { ok: boolean; error?: string } {
+  return executeCoreCommand({ CreateEntityInstance: { entity_type, instance_id } });
+}
+
+/** Set a field value on an entity instance. */
+export function setEntityField(instance_id: string, field: string, value: unknown): { ok: boolean; error?: string } {
+  return executeCoreCommand({ SetEntityField: { instance_id, field, value } });
 }
 
 // ── AI Proposal ────────────────────────────────────────────────────────
