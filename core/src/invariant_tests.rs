@@ -3,8 +3,8 @@
 //! Each invariant has at least one automated test that fails if the invariant is violated.
 //! These tests run as part of `cargo test`.
 
-use std::collections::HashMap;
 use crate::{EventType, WorkbenchCore};
+use std::collections::HashMap;
 
 // ── INV-1: Single source of truth ────────────────────────────────────
 
@@ -19,7 +19,8 @@ fn inv1_state_is_derived_from_events() {
     // State must be reconstructable from events alone.
     let rebuilt = core.rebuild().unwrap();
     let current = core.get_state();
-    assert_eq!(current, rebuilt,
+    assert_eq!(
+        current, rebuilt,
         "INV-1 VIOLATION: state (from live materialization) != state rebuilt from events"
     );
 }
@@ -33,12 +34,16 @@ fn inv2_every_mutation_produces_event() {
     let initial_count = core.get_total_events().unwrap();
 
     core.set("hp", serde_json::json!(100)).unwrap();
-    assert_eq!(core.get_total_events().unwrap(), initial_count + 1,
+    assert_eq!(
+        core.get_total_events().unwrap(),
+        initial_count + 1,
         "INV-2 VIOLATION: mutation did not produce an event"
     );
 
     core.delete("hp").unwrap();
-    assert_eq!(core.get_total_events().unwrap(), initial_count + 2,
+    assert_eq!(
+        core.get_total_events().unwrap(),
+        initial_count + 2,
         "INV-2 VIOLATION: mutation did not produce an event"
     );
 
@@ -91,7 +96,9 @@ fn inv2_state_changes_only_through_execute() {
     state_copy.insert("hack".into(), serde_json::json!("evil"));
 
     // Core state must be unchanged.
-    assert_eq!(core.get_state(), state_before,
+    assert_eq!(
+        core.get_state(),
+        state_before,
         "INV-2 VIOLATION: state can be mutated outside execute path"
     );
 }
@@ -112,8 +119,13 @@ fn inv3_no_proposal_event_type() {
 
     // Forbidden CamelCase identifiers that would indicate proposal machinery.
     let forbidden_variants = [
-        "Proposal", "Proposed", "Accept", "Reject", "Review",
-        "AiSuggestion", "AutoApply",
+        "Proposal",
+        "Proposed",
+        "Accept",
+        "Reject",
+        "Review",
+        "AiSuggestion",
+        "AutoApply",
     ];
 
     for variant in &forbidden_variants {
@@ -134,8 +146,12 @@ fn inv3_no_auto_accept_in_engine() {
     let contract_rs = include_str!("contract.rs");
 
     let forbidden_patterns = [
-        "auto_accept", "auto_apply", "auto_commit",
-        "accept_proposal", "apply_proposal", "proposal_accepted",
+        "auto_accept",
+        "auto_apply",
+        "auto_commit",
+        "accept_proposal",
+        "apply_proposal",
+        "proposal_accepted",
     ];
 
     for source in [engine_rs, contract_rs] {
@@ -166,13 +182,17 @@ fn inv3_all_writes_require_explicit_action() {
     // Phase 3: reading state does NOT produce events
     let _ = core.get_state();
     let _ = core.get_history();
-    assert_eq!(core.get_total_events().unwrap(), 1,
+    assert_eq!(
+        core.get_total_events().unwrap(),
+        1,
         "INV-3 VIOLATION: read-only operation produced an event"
     );
 
     // Phase 4: rebuild does NOT produce events
     let _ = core.rebuild();
-    assert_eq!(core.get_total_events().unwrap(), 1,
+    assert_eq!(
+        core.get_total_events().unwrap(),
+        1,
         "INV-3 VIOLATION: rebuild produced an event"
     );
 }
@@ -192,14 +212,45 @@ fn inv4_inv7_core_has_no_llm_http_render_deps() {
 
     let forbidden = [
         // LLM
-        "openai", "anthropic", "llm", "gpt", "claude", "gemini", "mistral",
-        "tokenizer", "tiktoken", "candle", "torch", "onnx",
+        "openai",
+        "anthropic",
+        "llm",
+        "gpt",
+        "claude",
+        "gemini",
+        "mistral",
+        "tokenizer",
+        "tiktoken",
+        "candle",
+        "torch",
+        "onnx",
         // HTTP / networking
-        "reqwest", "hyper", "http", "tokio-tungstenite", "tungstenite",
-        "axum", "warp", "actix", "rocket", "ureq", "curl", "socket2",
+        "reqwest",
+        "hyper",
+        "http",
+        "tokio-tungstenite",
+        "tungstenite",
+        "axum",
+        "warp",
+        "actix",
+        "rocket",
+        "ureq",
+        "curl",
+        "socket2",
         // Rendering
-        "wgpu", "vulkan", "opengl", "gl", "sdl2", "pixels", "rayon-vulkan",
-        "bevy", "macroquad", "ggez", "miniquad", "skia", "raqote",
+        "wgpu",
+        "vulkan",
+        "opengl",
+        "gl",
+        "sdl2",
+        "pixels",
+        "rayon-vulkan",
+        "bevy",
+        "macroquad",
+        "ggez",
+        "miniquad",
+        "skia",
+        "raqote",
         "tauri", // rendering shell — should be in src-tauri, not core
     ];
 
@@ -212,7 +263,10 @@ fn inv4_inv7_core_has_no_llm_http_render_deps() {
     }
 
     // Also verify the core Cargo.toml doesn't contain tauri dependencies.
-    assert!(!cargo_toml.contains("tauri"), "INV-7 VIOLATION: core references tauri (rendering shell)");
+    assert!(
+        !cargo_toml.contains("tauri"),
+        "INV-7 VIOLATION: core references tauri (rendering shell)"
+    );
 }
 
 // ── INV-5: Event sourcing — replay consistency ───────────────────────
@@ -249,7 +303,8 @@ fn inv5_undo_redo_produces_consistent_state() {
     core.redo(2).unwrap();
 
     let state_after = core.get_state();
-    assert_eq!(state_before, state_after,
+    assert_eq!(
+        state_before, state_after,
         "INV-5 VIOLATION: undo → redo did not restore original state"
     );
 }
@@ -283,16 +338,19 @@ fn inv5_restart_replay_produces_identical_state() {
         let state_after = core_restarted.get_state();
         let total_after = core_restarted.get_total_events().unwrap();
 
-        assert_eq!(state_before_close, state_after,
+        assert_eq!(
+            state_before_close, state_after,
             "INV-5 VIOLATION: restart produced different state from events log"
         );
-        assert_eq!(total_before, total_after,
+        assert_eq!(
+            total_before, total_after,
             "INV-5 VIOLATION: event count changed after restart"
         );
 
         // Also verify rebuild matches
         let rebuilt = core_restarted.rebuild().unwrap();
-        assert_eq!(state_after, rebuilt,
+        assert_eq!(
+            state_after, rebuilt,
             "INV-5 VIOLATION: rebuild after restart doesn't match current state"
         );
     }
@@ -329,12 +387,15 @@ fn inv5_undo_redo_and_restart_replay_identical() {
     // Restart and verify
     {
         let core_restarted = WorkbenchCore::open(db_path_str, "global").unwrap();
-        assert_eq!(state_final, core_restarted.get_state(),
+        assert_eq!(
+            state_final,
+            core_restarted.get_state(),
             "INV-5 VIOLATION: undo→redo→restart state doesn't match"
         );
 
         let rebuilt = core_restarted.rebuild().unwrap();
-        assert_eq!(state_final, rebuilt,
+        assert_eq!(
+            state_final, rebuilt,
             "INV-5 VIOLATION: rebuild after undo→redo→restart doesn't match"
         );
     }
@@ -359,14 +420,16 @@ fn inv5_events_are_never_deleted() {
 
     // Events must still be in the log
     let total_after_undo = core.get_total_events().unwrap();
-    assert_eq!(total_after_undo, 2,
+    assert_eq!(
+        total_after_undo, 2,
         "INV-5 VIOLATION: events were deleted after undo"
     );
 
     // Event at seq 2 must still be retrievable
     let history = core.get_history().unwrap();
     assert_eq!(history.len(), 2);
-    assert!(history.iter().any(|e| e.seq == 2),
+    assert!(
+        history.iter().any(|e| e.seq == 2),
         "INV-5 VIOLATION: event seq 2 missing from log after undo"
     );
 }
@@ -408,7 +471,8 @@ fn inv6_all_consumer_operations_through_contract() {
     // Replay verification (INV-5)
     let state = core.get_state();
     let rebuilt = core.rebuild().unwrap();
-    assert_eq!(state, rebuilt,
+    assert_eq!(
+        state, rebuilt,
         "INV-6 VIOLATION: rebuild via contract produced different state"
     );
 
@@ -430,14 +494,18 @@ fn inv6_contract_is_single_entry_point() {
     // set() produces 1 event
     let before = core.get_total_events().unwrap();
     core.set("a", serde_json::json!(1)).unwrap();
-    assert_eq!(core.get_total_events().unwrap(), before + 1,
+    assert_eq!(
+        core.get_total_events().unwrap(),
+        before + 1,
         "INV-6 VIOLATION: set() did not produce exactly 1 event"
     );
 
     // delete() produces 1 event
     let before = core.get_total_events().unwrap();
     core.delete("a").unwrap();
-    assert_eq!(core.get_total_events().unwrap(), before + 1,
+    assert_eq!(
+        core.get_total_events().unwrap(),
+        before + 1,
         "INV-6 VIOLATION: delete() did not produce exactly 1 event"
     );
 
@@ -446,14 +514,21 @@ fn inv6_contract_is_single_entry_point() {
     core.execute_command(crate::engine::Command::Set {
         key: "b".into(),
         value: serde_json::json!(2),
-    }).unwrap();
-    assert_eq!(core.get_total_events().unwrap(), before + 1,
+    })
+    .unwrap();
+    assert_eq!(
+        core.get_total_events().unwrap(),
+        before + 1,
         "INV-6 VIOLATION: execute_command() did not produce exactly 1 event"
     );
 
     // State reflects only explicit writes
     let state = core.get_state();
-    assert_eq!(state.len(), 1, "state should have 1 key (only 'b' after delete of 'a')");
+    assert_eq!(
+        state.len(),
+        1,
+        "state should have 1 key (only 'b' after delete of 'a')"
+    );
     assert!(state.contains_key("b"));
     assert!(!state.contains_key("a"));
 }
@@ -496,8 +571,16 @@ fn inv7_no_graphics_symbols_in_source() {
     let engine_rs = include_str!("engine.rs");
 
     let forbidden_imports = [
-        "wgpu", "vulkan", "opengl", "sdl2", "bevy",
-        "macroquad", "ggez", "miniquad", "skia", "raqote",
+        "wgpu",
+        "vulkan",
+        "opengl",
+        "sdl2",
+        "bevy",
+        "macroquad",
+        "ggez",
+        "miniquad",
+        "skia",
+        "raqote",
         "tauri",
     ];
 
@@ -524,9 +607,15 @@ fn inv8_no_hook_event_type() {
     let event_rs = include_str!("event.rs");
 
     let forbidden_variants = [
-        "Hook", "HookFired", "Reaction", "ReactionApplied",
-        "Trigger", "TriggerFired", "Callback",
-        "SideEffect", "Cascade",
+        "Hook",
+        "HookFired",
+        "Reaction",
+        "ReactionApplied",
+        "Trigger",
+        "TriggerFired",
+        "Callback",
+        "SideEffect",
+        "Cascade",
     ];
 
     for variant in &forbidden_variants {
@@ -546,9 +635,14 @@ fn inv8_no_hook_registration_in_source() {
     let contract_rs = include_str!("contract.rs");
 
     let forbidden_patterns = [
-        "register_hook", "on_event", "add_listener",
-        "subscribe", "dispatch", "emit",
-        "reaction", "trigger_hook",
+        "register_hook",
+        "on_event",
+        "add_listener",
+        "subscribe",
+        "dispatch",
+        "emit",
+        "reaction",
+        "trigger_hook",
     ];
 
     for source in [engine_rs, lib_rs, contract_rs] {
@@ -571,36 +665,48 @@ fn inv8_each_mutation_produces_exactly_one_event() {
 
     // A single set produces exactly one event
     core.set("hp", serde_json::json!(100)).unwrap();
-    assert_eq!(core.get_total_events().unwrap(), count_before + 1,
+    assert_eq!(
+        core.get_total_events().unwrap(),
+        count_before + 1,
         "INV-8 VIOLATION: set() produced more than one event (cascading?)"
     );
 
     // A single delete produces exactly one event
     core.delete("hp").unwrap();
-    assert_eq!(core.get_total_events().unwrap(), count_before + 2,
+    assert_eq!(
+        core.get_total_events().unwrap(),
+        count_before + 2,
         "INV-8 VIOLATION: delete() produced more than one event (cascading?)"
     );
 
     // Domain commands also produce exactly one event each
     core.create_node("room_a", "Room A").unwrap();
-    assert_eq!(core.get_total_events().unwrap(), count_before + 3,
+    assert_eq!(
+        core.get_total_events().unwrap(),
+        count_before + 3,
         "INV-8 VIOLATION: create_node() produced more than one event"
     );
 
     core.create_edge("room_a", "room_b", true).unwrap();
-    assert_eq!(core.get_total_events().unwrap(), count_before + 4,
+    assert_eq!(
+        core.get_total_events().unwrap(),
+        count_before + 4,
         "INV-8 VIOLATION: create_edge() produced more than one event"
     );
 
     // Undo/redo do NOT produce new events
     let before_undo = core.get_total_events().unwrap();
     core.undo(1).unwrap();
-    assert_eq!(core.get_total_events().unwrap(), before_undo,
+    assert_eq!(
+        core.get_total_events().unwrap(),
+        before_undo,
         "INV-8 VIOLATION: undo() produced new events"
     );
 
     core.redo(1).unwrap();
-    assert_eq!(core.get_total_events().unwrap(), before_undo,
+    assert_eq!(
+        core.get_total_events().unwrap(),
+        before_undo,
         "INV-8 VIOLATION: redo() produced new events"
     );
 }
@@ -622,15 +728,20 @@ fn inv8_no_event_triggers_event() {
 
     // Attach a POI referencing an entity — should produce exactly 1 event,
     // NOT also auto-create the entity or node.
-    core.attach_poi("spawn_room", "poi_enemy", Some("goblin_1")).unwrap();
+    core.attach_poi("spawn_room", "poi_enemy", Some("goblin_1"))
+        .unwrap();
 
-    assert_eq!(core.get_total_events().unwrap(), count_before + 1,
+    assert_eq!(
+        core.get_total_events().unwrap(),
+        count_before + 1,
         "INV-8 VIOLATION: attach_poi() produced more than one event (auto-cascade?)"
     );
 
     // Detach a POI — exactly 1 event.
     core.detach_poi("spawn_room", "poi_enemy").unwrap();
-    assert_eq!(core.get_total_events().unwrap(), count_before + 2,
+    assert_eq!(
+        core.get_total_events().unwrap(),
+        count_before + 2,
         "INV-8 VIOLATION: detach_poi() produced more than one event (auto-cascade?)"
     );
 

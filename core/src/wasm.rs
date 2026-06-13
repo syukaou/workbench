@@ -11,7 +11,6 @@ use wasm_bindgen::prelude::*;
 use crate::contract::WorkbenchCore;
 use crate::engine::Command;
 
-
 // ── Global core instance ─────────────────────────────────────────────
 
 thread_local! {
@@ -39,22 +38,32 @@ fn ensure_core() {
 ///   Garden → Vault (one-way shortcut)
 fn seed_topology(core: &mut WorkbenchCore) {
     // Create 5 rooms
-    core.create_node("entrance", "Entrance Hall").expect("seed: create entrance");
-    core.create_node("armory", "Armory").expect("seed: create armory");
-    core.create_node("library", "Library").expect("seed: create library");
-    core.create_node("garden", "Garden").expect("seed: create garden");
-    core.create_node("vault", "Vault").expect("seed: create vault");
+    core.create_node("entrance", "Entrance Hall")
+        .expect("seed: create entrance");
+    core.create_node("armory", "Armory")
+        .expect("seed: create armory");
+    core.create_node("library", "Library")
+        .expect("seed: create library");
+    core.create_node("garden", "Garden")
+        .expect("seed: create garden");
+    core.create_node("vault", "Vault")
+        .expect("seed: create vault");
 
     // Bidirectional: entrance ↔ armory, entrance ↔ library
-    core.create_edge("entrance", "armory", true).expect("seed: edge entrance-armory");
-    core.create_edge("entrance", "library", true).expect("seed: edge entrance-library");
+    core.create_edge("entrance", "armory", true)
+        .expect("seed: edge entrance-armory");
+    core.create_edge("entrance", "library", true)
+        .expect("seed: edge entrance-library");
 
     // One-way shortcut: garden → vault
-    core.create_edge("garden", "vault", false).expect("seed: edge garden-vault");
+    core.create_edge("garden", "vault", false)
+        .expect("seed: edge garden-vault");
 
     // Mark entrance as spawn, vault as shortcut
-    core.mark_node("entrance", "spawn").expect("seed: mark entrance");
-    core.mark_node("vault", "shortcut").expect("seed: mark vault");
+    core.mark_node("entrance", "spawn")
+        .expect("seed: mark entrance");
+    core.mark_node("vault", "shortcut")
+        .expect("seed: mark vault");
 }
 
 // ── Public WASM exports ──────────────────────────────────────────────
@@ -91,15 +100,11 @@ pub fn execute_command(json_str: &str) -> JsValue {
         Ok(val) => match parse_command(&val) {
             Ok(cmd) => cmd,
             Err(e) => {
-                return JsValue::from_str(
-                    &format!(r#"{{"ok":false,"error":"{}"}}"#, e),
-                );
+                return JsValue::from_str(&format!(r#"{{"ok":false,"error":"{}"}}"#, e));
             }
         },
         Err(e) => {
-            return JsValue::from_str(
-                &format!(r#"{{"ok":false,"error":"Invalid JSON: {}"}}"#, e),
-            );
+            return JsValue::from_str(&format!(r#"{{"ok":false,"error":"Invalid JSON: {}"}}"#, e));
         }
     };
 
@@ -107,12 +112,8 @@ pub fn execute_command(json_str: &str) -> JsValue {
         let mut core = cell.borrow_mut();
         let c = core.as_mut().unwrap();
         match c.execute_command(command) {
-            Ok(event) => JsValue::from_str(
-                &format!(r#"{{"ok":true,"seq":{}}}"#, event.seq),
-            ),
-            Err(e) => JsValue::from_str(
-                &format!(r#"{{"ok":false,"error":"{}"}}"#, e),
-            ),
+            Ok(event) => JsValue::from_str(&format!(r#"{{"ok":true,"seq":{}}}"#, event.seq)),
+            Err(e) => JsValue::from_str(&format!(r#"{{"ok":false,"error":"{}"}}"#, e)),
         }
     })
 }
@@ -171,7 +172,9 @@ fn mock_propose(intent: &str) -> Vec<serde_json::Value> {
     } else if lower.contains("secret") || lower.contains("hidden") {
         // Hidden room accessible via one-way
         cmds.push(serde_json::json!({"CreateNode": {"node_id": "main", "label": "Main Hall"}}));
-        cmds.push(serde_json::json!({"CreateNode": {"node_id": "secret_room", "label": "Secret Room"}}));
+        cmds.push(
+            serde_json::json!({"CreateNode": {"node_id": "secret_room", "label": "Secret Room"}}),
+        );
         cmds.push(serde_json::json!({"CreateEdge": {"from_node": "main", "to_node": "secret_room", "bidirectional": false}}));
         cmds.push(serde_json::json!({"MarkNode": {"node_id": "main", "mark": "spawn"}}));
         cmds.push(serde_json::json!({"MarkNode": {"node_id": "secret_room", "mark": "treasure"}}));
@@ -242,10 +245,7 @@ fn parse_command(val: &serde_json::Value) -> Result<Command, String> {
         "RemoveEdge" => {
             let from_node = get_str("from_node")?;
             let to_node = get_str("to_node")?;
-            Ok(Command::RemoveEdge {
-                from_node,
-                to_node,
-            })
+            Ok(Command::RemoveEdge { from_node, to_node })
         }
         "MarkNode" => {
             let node_id = get_str("node_id")?;

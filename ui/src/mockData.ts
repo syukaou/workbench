@@ -99,19 +99,55 @@ export async function executeCommand(cmdObj: Record<string, unknown>): Promise<G
 
 // ── AI Proposal ────────────────────────────────────────────────────────
 
+const PROPOSE_URL = 'http://localhost:5198/propose';
+
 /**
- * Request topology proposals from the WASM core (mock in WASM).
- * Falls back to a local mock if core is unavailable.
+ * Request topology proposals via HTTP (real AI via CLI server).
+ * Falls back to WASM mock, then to a local mock if everything fails.
  */
 export async function requestProposal(intent: string): Promise<Record<string, unknown>[]> {
+  // 1) Try the native HTTP proposal server (real AI via opencode CLI).
+  try {
+    const cmds = await proposeViaHttp(intent);
+    if (cmds.length > 0) return cmds;
+  } catch {
+    console.warn('HTTP proposal server unavailable, trying WASM mock...');
+  }
+
+  // 2) Fall back to WASM mock (keyword-based proposal generator).
   try {
     await ensureCore();
     return proposeViaCore(intent);
   } catch {
-    // Core unavailable — use local mock
-    console.warn('Core unavailable for proposal, using local mock');
-    return mockProposeLocal(intent);
+    console.warn('WASM core unavailable for proposal, using local mock');
   }
+
+  // 3) Last resort: local JavaScript mock (same keyword logic).
+  return mockProposeLocal(intent);
+}
+
+/**
+ * Call the native HTTP proposal server: POST localhost:5198/propose.
+ * Returns parsed commands array, or throws on failure.
+ */
+async function proposeViaHttp(intent: string): Promise<Record<string, unknown>[]> {
+  const response = await fetch(PROPOSE_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ intent }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Propose server returned ${response.status}: ${body}`);
+  }
+
+  const data = await response.json();
+  if (!data.ok) {
+    throw new Error(`Propose server error: ${data.error}`);
+  }
+
+  return (data.commands ?? []) as Record<string, unknown>[];
 }
 
 /** Local mock proposal generator matching the Rust mock keyword logic. */

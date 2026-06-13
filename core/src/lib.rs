@@ -5,11 +5,11 @@
 //! append-only typed event log. State is derived by folding events.
 //! The core crate has zero LLM/HTTP/rendering dependencies (INV-4/7).
 
+pub mod contract;
+pub mod engine;
 pub mod error;
 pub mod event;
 pub mod projection;
-pub mod engine;
-pub mod contract;
 
 // Event store: SQLite when native, in-memory Vec when WASM.
 #[cfg(feature = "native")]
@@ -25,6 +25,10 @@ pub use memory_store::MemoryStore as EventStore;
 // CLI bridge: only available on native (uses std::process).
 #[cfg(feature = "native")]
 pub mod cli_bridge;
+
+// CLI HTTP server: only available on native (uses std::net).
+#[cfg(feature = "native")]
+pub mod cli_server;
 
 // WASM IPC: only available on wasm32 target.
 #[cfg(target_arch = "wasm32")]

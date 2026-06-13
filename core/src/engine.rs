@@ -2,12 +2,12 @@ use std::collections::HashMap;
 
 use crate::error::{Error, Result};
 use crate::event::{Event, EventType};
-use crate::EventStore;
 use crate::projection::{HashMapProjection, Projection};
+use crate::EventStore;
 
 /// A command to mutate the system state. Every command goes through
 /// validate → serialize → append to event log → update state (INV-2).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub enum Command {
     // ── U1: Generic ──
     /// Set a key to a value.
@@ -16,15 +16,11 @@ pub enum Command {
         value: serde_json::Value,
     },
     /// Delete a key.
-    Delete {
-        key: String,
-    },
+    Delete { key: String },
 
     // ── U2: Entities ──
     /// Define a new entity type.
-    CreateEntityType {
-        name: String,
-    },
+    CreateEntityType { name: String },
     /// Create an instance of an entity type.
     CreateEntityInstance {
         entity_type: String,
@@ -39,14 +35,9 @@ pub enum Command {
 
     // ── U3: Graph topology ──
     /// Add a node (room/area) to the graph.
-    CreateNode {
-        node_id: String,
-        label: String,
-    },
+    CreateNode { node_id: String, label: String },
     /// Remove a node from the graph.
-    RemoveNode {
-        node_id: String,
-    },
+    RemoveNode { node_id: String },
     /// Add an edge between two nodes.
     CreateEdge {
         from_node: String,
@@ -54,15 +45,9 @@ pub enum Command {
         bidirectional: bool,
     },
     /// Remove an edge.
-    RemoveEdge {
-        from_node: String,
-        to_node: String,
-    },
+    RemoveEdge { from_node: String, to_node: String },
     /// Apply a semantic mark to a node.
-    MarkNode {
-        node_id: String,
-        mark: String,
-    },
+    MarkNode { node_id: String, mark: String },
 
     // ── U3: POI ──
     /// Attach a POI to a node, optionally referencing an entity instance.
@@ -72,10 +57,7 @@ pub enum Command {
         entity_ref: Option<String>,
     },
     /// Detach a POI from a node.
-    DetachPOI {
-        node_id: String,
-        poi_id: String,
-    },
+    DetachPOI { node_id: String, poi_id: String },
 }
 
 /// The core engine: processes commands through the event log,
@@ -140,10 +122,7 @@ impl Engine {
                 EventType::Set,
                 serde_json::json!({"key": key, "value": value}),
             ),
-            Command::Delete { key } => (
-                EventType::Delete,
-                serde_json::json!({"key": key}),
-            ),
+            Command::Delete { key } => (EventType::Delete, serde_json::json!({"key": key})),
             Command::CreateEntityType { name } => (
                 EventType::EntityTypeCreated,
                 serde_json::json!({"name": name}),
@@ -179,10 +158,7 @@ impl Engine {
                 EventType::EdgeCreated,
                 serde_json::json!({"from": from_node, "to": to_node, "bidirectional": bidirectional}),
             ),
-            Command::RemoveEdge {
-                from_node,
-                to_node,
-            } => (
+            Command::RemoveEdge { from_node, to_node } => (
                 EventType::EdgeRemoved,
                 serde_json::json!({"from": from_node, "to": to_node}),
             ),
@@ -205,7 +181,8 @@ impl Engine {
         };
 
         // Validate: check that the payload is valid JSON.
-        serde_json::to_string(&payload).map_err(|e| Error::InvalidCommand(format!("Cannot serialize payload: {}", e)))?;
+        serde_json::to_string(&payload)
+            .map_err(|e| Error::InvalidCommand(format!("Cannot serialize payload: {}", e)))?;
 
         let next_seq = self.current_seq + 1;
         let timestamp = timestamp_ms();
@@ -310,7 +287,11 @@ impl Engine {
 ///
 /// Uses the Projection trait's deterministic fold: apply_event for each event
 /// in sequence order. This is the canonical state reconstruction path (INV-5).
-fn fold_projection(store: &EventStore, aggregate_id: &str, max_seq: u64) -> Result<HashMapProjection> {
+fn fold_projection(
+    store: &EventStore,
+    aggregate_id: &str,
+    max_seq: u64,
+) -> Result<HashMapProjection> {
     if max_seq == 0 {
         return Ok(HashMapProjection::new());
     }
@@ -363,9 +344,7 @@ mod tests {
             })
             .unwrap();
         engine
-            .execute(Command::Delete {
-                key: "hp".into(),
-            })
+            .execute(Command::Delete { key: "hp".into() })
             .unwrap();
 
         assert!(engine.state().get("hp").is_none());
@@ -635,7 +614,10 @@ mod tests {
             })
             .unwrap();
         assert_eq!(event.event_type, EventType::EntityTypeCreated);
-        assert_eq!(engine.state().get("entity_type:Boss").unwrap(), &serde_json::json!({"fields": {}}));
+        assert_eq!(
+            engine.state().get("entity_type:Boss").unwrap(),
+            &serde_json::json!({"fields": {}})
+        );
     }
 
     #[test]
@@ -836,24 +818,83 @@ mod tests {
         let mut engine = setup();
 
         // Create 5 rooms: central hall + 3 branch rooms + 1 dead-end
-        engine.execute(Command::CreateNode{node_id:"central".into(), label:"Central Hall".into()}).unwrap();
-        engine.execute(Command::CreateNode{node_id:"branch_a".into(), label:"Armory".into()}).unwrap();
-        engine.execute(Command::CreateNode{node_id:"branch_b".into(), label:"Library".into()}).unwrap();
-        engine.execute(Command::CreateNode{node_id:"branch_c".into(), label:"Throne Room".into()}).unwrap();
-        engine.execute(Command::CreateNode{node_id:"dead_end".into(), label:"Vault".into()}).unwrap();
+        engine
+            .execute(Command::CreateNode {
+                node_id: "central".into(),
+                label: "Central Hall".into(),
+            })
+            .unwrap();
+        engine
+            .execute(Command::CreateNode {
+                node_id: "branch_a".into(),
+                label: "Armory".into(),
+            })
+            .unwrap();
+        engine
+            .execute(Command::CreateNode {
+                node_id: "branch_b".into(),
+                label: "Library".into(),
+            })
+            .unwrap();
+        engine
+            .execute(Command::CreateNode {
+                node_id: "branch_c".into(),
+                label: "Throne Room".into(),
+            })
+            .unwrap();
+        engine
+            .execute(Command::CreateNode {
+                node_id: "dead_end".into(),
+                label: "Vault".into(),
+            })
+            .unwrap();
 
         // Central ↔ three branches (bidirectional)
-        engine.execute(Command::CreateEdge{from_node:"central".into(),to_node:"branch_a".into(),bidirectional:true}).unwrap();
-        engine.execute(Command::CreateEdge{from_node:"central".into(),to_node:"branch_b".into(),bidirectional:true}).unwrap();
-        engine.execute(Command::CreateEdge{from_node:"central".into(),to_node:"branch_c".into(),bidirectional:true}).unwrap();
+        engine
+            .execute(Command::CreateEdge {
+                from_node: "central".into(),
+                to_node: "branch_a".into(),
+                bidirectional: true,
+            })
+            .unwrap();
+        engine
+            .execute(Command::CreateEdge {
+                from_node: "central".into(),
+                to_node: "branch_b".into(),
+                bidirectional: true,
+            })
+            .unwrap();
+        engine
+            .execute(Command::CreateEdge {
+                from_node: "central".into(),
+                to_node: "branch_c".into(),
+                bidirectional: true,
+            })
+            .unwrap();
 
         // One unidirectional shortcut: branch_c → dead_end (one-way)
-        engine.execute(Command::CreateEdge{from_node:"branch_c".into(),to_node:"dead_end".into(),bidirectional:false}).unwrap();
+        engine
+            .execute(Command::CreateEdge {
+                from_node: "branch_c".into(),
+                to_node: "dead_end".into(),
+                bidirectional: false,
+            })
+            .unwrap();
 
         // Mark spawn point on central
-        engine.execute(Command::MarkNode{node_id:"central".into(),mark:"spawn".into()}).unwrap();
+        engine
+            .execute(Command::MarkNode {
+                node_id: "central".into(),
+                mark: "spawn".into(),
+            })
+            .unwrap();
         // Mark shortcut on the one-way edge's target
-        engine.execute(Command::MarkNode{node_id:"dead_end".into(),mark:"shortcut".into()}).unwrap();
+        engine
+            .execute(Command::MarkNode {
+                node_id: "dead_end".into(),
+                mark: "shortcut".into(),
+            })
+            .unwrap();
 
         // Verify all 5 nodes exist
         assert!(engine.state().get("node:central").is_some());
@@ -876,27 +917,48 @@ mod tests {
 
         // Verify marks
         let central = engine.state().get("node:central").unwrap();
-        assert!(central["marks"].as_array().unwrap().contains(&serde_json::json!("spawn")));
+        assert!(central["marks"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("spawn")));
         let vault = engine.state().get("node:dead_end").unwrap();
-        assert!(vault["marks"].as_array().unwrap().contains(&serde_json::json!("shortcut")));
+        assert!(vault["marks"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("shortcut")));
 
         // Verify everything went through event log
         let history = engine.history().unwrap();
-        let node_count = history.iter().filter(|e| e.event_type == EventType::NodeCreated).count();
+        let node_count = history
+            .iter()
+            .filter(|e| e.event_type == EventType::NodeCreated)
+            .count();
         assert_eq!(node_count, 5);
-        let edge_count = history.iter().filter(|e| e.event_type == EventType::EdgeCreated).count();
+        let edge_count = history
+            .iter()
+            .filter(|e| e.event_type == EventType::EdgeCreated)
+            .count();
         assert_eq!(edge_count, 4);
-        let mark_count = history.iter().filter(|e| e.event_type == EventType::NodeMarked).count();
+        let mark_count = history
+            .iter()
+            .filter(|e| e.event_type == EventType::NodeMarked)
+            .count();
         assert_eq!(mark_count, 2);
 
         // Verify undo/redo: undo the shortcut mark, verify it's gone, redo it back
         let seq_before = engine.current_seq();
         engine.undo(1).unwrap();
         let vault_undone = engine.state().get("node:dead_end").unwrap();
-        assert!(!vault_undone["marks"].as_array().unwrap().contains(&serde_json::json!("shortcut")));
+        assert!(!vault_undone["marks"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("shortcut")));
         engine.redo(1).unwrap();
         let vault_redone = engine.state().get("node:dead_end").unwrap();
-        assert!(vault_redone["marks"].as_array().unwrap().contains(&serde_json::json!("shortcut")));
+        assert!(vault_redone["marks"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("shortcut")));
         assert_eq!(engine.current_seq(), seq_before);
     }
 
@@ -906,19 +968,57 @@ mod tests {
         let mut engine = setup();
 
         // Create a node (room)
-        engine.execute(Command::CreateNode{node_id:"boss_room".into(), label:"Dragon's Lair".into()}).unwrap();
+        engine
+            .execute(Command::CreateNode {
+                node_id: "boss_room".into(),
+                label: "Dragon's Lair".into(),
+            })
+            .unwrap();
 
         // U2: define Boss entity type
-        engine.execute(Command::CreateEntityType{name:"Boss".into()}).unwrap();
+        engine
+            .execute(Command::CreateEntityType {
+                name: "Boss".into(),
+            })
+            .unwrap();
 
         // U2: create Boss instance with fields
-        engine.execute(Command::CreateEntityInstance{entity_type:"Boss".into(), instance_id:"dragon_01".into()}).unwrap();
-        engine.execute(Command::SetEntityField{instance_id:"dragon_01".into(),field:"name".into(),value:serde_json::json!("Ancient Red Dragon")}).unwrap();
-        engine.execute(Command::SetEntityField{instance_id:"dragon_01".into(),field:"hp".into(),value:serde_json::json!(5000)}).unwrap();
-        engine.execute(Command::SetEntityField{instance_id:"dragon_01".into(),field:"difficulty".into(),value:serde_json::json!("nightmare")}).unwrap();
+        engine
+            .execute(Command::CreateEntityInstance {
+                entity_type: "Boss".into(),
+                instance_id: "dragon_01".into(),
+            })
+            .unwrap();
+        engine
+            .execute(Command::SetEntityField {
+                instance_id: "dragon_01".into(),
+                field: "name".into(),
+                value: serde_json::json!("Ancient Red Dragon"),
+            })
+            .unwrap();
+        engine
+            .execute(Command::SetEntityField {
+                instance_id: "dragon_01".into(),
+                field: "hp".into(),
+                value: serde_json::json!(5000),
+            })
+            .unwrap();
+        engine
+            .execute(Command::SetEntityField {
+                instance_id: "dragon_01".into(),
+                field: "difficulty".into(),
+                value: serde_json::json!("nightmare"),
+            })
+            .unwrap();
 
         // U3: attach POI referencing the Boss instance
-        engine.execute(Command::AttachPOI{node_id:"boss_room".into(),poi_id:"poi_boss".into(),entity_ref:Some("dragon_01".into())}).unwrap();
+        engine
+            .execute(Command::AttachPOI {
+                node_id: "boss_room".into(),
+                poi_id: "poi_boss".into(),
+                entity_ref: Some("dragon_01".into()),
+            })
+            .unwrap();
 
         // Verify POI is on the node with correct entity reference
         let node = engine.state().get("node:boss_room").unwrap();
@@ -935,9 +1035,15 @@ mod tests {
 
         // Verify all operations went through event log
         let history = engine.history().unwrap();
-        let node_events: Vec<_> = history.iter().filter(|e| e.event_type == EventType::NodeCreated).collect();
+        let node_events: Vec<_> = history
+            .iter()
+            .filter(|e| e.event_type == EventType::NodeCreated)
+            .collect();
         assert_eq!(node_events.len(), 1);
-        let poi_events: Vec<_> = history.iter().filter(|e| e.event_type == EventType::POIAttached).collect();
+        let poi_events: Vec<_> = history
+            .iter()
+            .filter(|e| e.event_type == EventType::POIAttached)
+            .collect();
         assert_eq!(poi_events.len(), 1);
 
         // Verify undo removes the POI, redo restores it
@@ -958,11 +1064,27 @@ mod tests {
         // This verifies edge directionality is stored and preserved.
         let mut engine = setup();
 
-        engine.execute(Command::CreateNode{node_id:"a".into(), label:"Start".into()}).unwrap();
-        engine.execute(Command::CreateNode{node_id:"b".into(), label:"End".into()}).unwrap();
+        engine
+            .execute(Command::CreateNode {
+                node_id: "a".into(),
+                label: "Start".into(),
+            })
+            .unwrap();
+        engine
+            .execute(Command::CreateNode {
+                node_id: "b".into(),
+                label: "End".into(),
+            })
+            .unwrap();
 
         // Unidirectional: a → b
-        engine.execute(Command::CreateEdge{from_node:"a".into(),to_node:"b".into(),bidirectional:false}).unwrap();
+        engine
+            .execute(Command::CreateEdge {
+                from_node: "a".into(),
+                to_node: "b".into(),
+                bidirectional: false,
+            })
+            .unwrap();
 
         let edge = engine.state().get("edge:a->b").unwrap();
         assert!(!edge["bidirectional"].as_bool().unwrap());
@@ -1020,7 +1142,9 @@ mod tests {
             .unwrap();
 
         let rebuilt = engine.rebuild().unwrap();
-        assert_eq!(engine.state(), &rebuilt,
+        assert_eq!(
+            engine.state(),
+            &rebuilt,
             "INV-5: domain event replay must produce identical state"
         );
     }
@@ -1143,11 +1267,7 @@ mod tests {
         let red_after_undo = engine.state().get("entity_instance:boss_red").unwrap();
         // hp was set at seq 4; after undoing to seq 3 it must be absent
         assert!(
-            red_after_undo
-                .get("fields")
-                .unwrap()
-                .get("hp")
-                .is_none(),
+            red_after_undo.get("fields").unwrap().get("hp").is_none(),
             "Undo must revert the field sets via re-fold from log"
         );
 

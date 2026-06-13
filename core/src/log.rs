@@ -104,8 +104,8 @@ impl EventStore {
 
         let rows = stmt.query_map(params![aggregate_id], |row| {
             let event_type_str: String = row.get(3)?;
-            let event_type: EventType = serde_json::from_str(&format!("\"{}\"", event_type_str))
-                .unwrap_or(EventType::Set);
+            let event_type: EventType =
+                serde_json::from_str(&format!("\"{}\"", event_type_str)).unwrap_or(EventType::Set);
             let payload_str: String = row.get(4)?;
             let payload: serde_json::Value =
                 serde_json::from_str(&payload_str).unwrap_or(serde_json::Value::Null);
@@ -138,8 +138,8 @@ impl EventStore {
 
         let rows = stmt.query_map(params![aggregate_id, max_seq], |row| {
             let event_type_str: String = row.get(3)?;
-            let event_type: EventType = serde_json::from_str(&format!("\"{}\"", event_type_str))
-                .unwrap_or(EventType::Set);
+            let event_type: EventType =
+                serde_json::from_str(&format!("\"{}\"", event_type_str)).unwrap_or(EventType::Set);
             let payload_str: String = row.get(4)?;
             let payload: serde_json::Value =
                 serde_json::from_str(&payload_str).unwrap_or(serde_json::Value::Null);
@@ -189,7 +189,13 @@ mod tests {
     #[test]
     fn test_append_and_retrieve() {
         let store = EventStore::open_in_memory().unwrap();
-        let event = Event::new(1, "global", EventType::Set, serde_json::json!({"key": "hp", "value": 100}), 1000);
+        let event = Event::new(
+            1,
+            "global",
+            EventType::Set,
+            serde_json::json!({"key": "hp", "value": 100}),
+            1000,
+        );
         let persisted = store.append(&event).unwrap();
         assert_eq!(persisted.id, 1);
         assert_eq!(persisted.seq, 1);
@@ -202,7 +208,13 @@ mod tests {
     #[test]
     fn test_seq_uniqueness_is_enforced() {
         let store = EventStore::open_in_memory().unwrap();
-        let event = Event::new(1, "global", EventType::Set, serde_json::json!({"key": "hp"}), 1000);
+        let event = Event::new(
+            1,
+            "global",
+            EventType::Set,
+            serde_json::json!({"key": "hp"}),
+            1000,
+        );
         store.append(&event).unwrap();
         // Duplicate seq should fail.
         let result = store.append(&event);
@@ -213,7 +225,13 @@ mod tests {
     fn test_get_up_to() {
         let store = EventStore::open_in_memory().unwrap();
         for i in 1..=5 {
-            let event = Event::new(i, "global", EventType::Set, serde_json::json!({"seq": i}), 1000);
+            let event = Event::new(
+                i,
+                "global",
+                EventType::Set,
+                serde_json::json!({"seq": i}),
+                1000,
+            );
             store.append(&event).unwrap();
         }
         let events = store.get_up_to("global", 3).unwrap();

@@ -183,10 +183,7 @@ impl Projection for HashMapProjection {
                     event.payload.get("node_id").and_then(|v| v.as_str()),
                     event.payload.get("poi_id").and_then(|v| v.as_str()),
                 ) {
-                    let entity_ref = event
-                        .payload
-                        .get("entity_ref")
-                        .and_then(|v| v.as_str());
+                    let entity_ref = event.payload.get("entity_ref").and_then(|v| v.as_str());
                     let key = format!("node:{nid}");
                     if let Some(node) = self.inner.get_mut(&key) {
                         if let Some(pois) = node.get_mut("pois") {
@@ -211,8 +208,7 @@ impl Projection for HashMapProjection {
                         if let Some(pois) = node.get_mut("pois") {
                             if let Some(arr) = pois.as_array_mut() {
                                 arr.retain(|p| {
-                                    p.get("poi_id").and_then(|v| v.as_str())
-                                        != Some(pid)
+                                    p.get("poi_id").and_then(|v| v.as_str()) != Some(pid)
                                 });
                             }
                         }
@@ -221,10 +217,8 @@ impl Projection for HashMapProjection {
             }
             // SchemaEvolved / Compensate: stored as raw entries.
             EventType::SchemaEvolved | EventType::Compensate => {
-                self.inner.insert(
-                    format!("event:{}", event.seq),
-                    event.payload.clone(),
-                );
+                self.inner
+                    .insert(format!("event:{}", event.seq), event.payload.clone());
             }
         }
     }
@@ -235,18 +229,18 @@ mod tests {
     use super::*;
     use crate::event::Event;
 
-    fn make_event(
-        seq: u64,
-        event_type: EventType,
-        payload: serde_json::Value,
-    ) -> Event {
+    fn make_event(seq: u64, event_type: EventType, payload: serde_json::Value) -> Event {
         Event::new(seq, "global", event_type, payload, 1000)
     }
 
     #[test]
     fn test_hashmap_projection_set_and_get() {
         let mut proj = HashMapProjection::new();
-        let event = make_event(1, EventType::Set, serde_json::json!({"key": "hp", "value": 100}));
+        let event = make_event(
+            1,
+            EventType::Set,
+            serde_json::json!({"key": "hp", "value": 100}),
+        );
         proj.apply_event(&event);
         assert_eq!(proj.get("hp").unwrap(), &serde_json::json!(100));
     }
@@ -254,17 +248,37 @@ mod tests {
     #[test]
     fn test_hashmap_projection_delete() {
         let mut proj = HashMapProjection::new();
-        proj.apply_event(&make_event(1, EventType::Set, serde_json::json!({"key": "hp", "value": 100})));
-        proj.apply_event(&make_event(2, EventType::Delete, serde_json::json!({"key": "hp"})));
+        proj.apply_event(&make_event(
+            1,
+            EventType::Set,
+            serde_json::json!({"key": "hp", "value": 100}),
+        ));
+        proj.apply_event(&make_event(
+            2,
+            EventType::Delete,
+            serde_json::json!({"key": "hp"}),
+        ));
         assert!(proj.get("hp").is_none());
     }
 
     #[test]
     fn test_hashmap_projection_rebuild() {
         let events = vec![
-            make_event(1, EventType::Set, serde_json::json!({"key": "a", "value": 1})),
-            make_event(2, EventType::Set, serde_json::json!({"key": "b", "value": 2})),
-            make_event(3, EventType::Set, serde_json::json!({"key": "c", "value": 3})),
+            make_event(
+                1,
+                EventType::Set,
+                serde_json::json!({"key": "a", "value": 1}),
+            ),
+            make_event(
+                2,
+                EventType::Set,
+                serde_json::json!({"key": "b", "value": 2}),
+            ),
+            make_event(
+                3,
+                EventType::Set,
+                serde_json::json!({"key": "c", "value": 3}),
+            ),
         ];
         let proj = HashMapProjection::rebuild(&events);
         assert_eq!(proj.get("a").unwrap(), &serde_json::json!(1));
@@ -283,8 +297,16 @@ mod tests {
     fn test_hashmap_projection_deterministic() {
         // INV-5: same events → identical projection
         let events = vec![
-            make_event(1, EventType::Set, serde_json::json!({"key": "hp", "value": 100})),
-            make_event(2, EventType::Set, serde_json::json!({"key": "mp", "value": 50})),
+            make_event(
+                1,
+                EventType::Set,
+                serde_json::json!({"key": "hp", "value": 100}),
+            ),
+            make_event(
+                2,
+                EventType::Set,
+                serde_json::json!({"key": "mp", "value": 50}),
+            ),
         ];
         let p1 = HashMapProjection::rebuild(&events);
         let p2 = HashMapProjection::rebuild(&events);
@@ -294,10 +316,26 @@ mod tests {
     #[test]
     fn test_hashmap_projection_node_events() {
         let events = vec![
-            make_event(1, EventType::NodeCreated, serde_json::json!({"node_id": "room_1", "label": "Central"})),
-            make_event(2, EventType::NodeCreated, serde_json::json!({"node_id": "room_2", "label": "Branch"})),
-            make_event(3, EventType::EdgeCreated, serde_json::json!({"from": "room_1", "to": "room_2", "bidirectional": true})),
-            make_event(4, EventType::NodeMarked, serde_json::json!({"node_id": "room_1", "mark": "spawn"})),
+            make_event(
+                1,
+                EventType::NodeCreated,
+                serde_json::json!({"node_id": "room_1", "label": "Central"}),
+            ),
+            make_event(
+                2,
+                EventType::NodeCreated,
+                serde_json::json!({"node_id": "room_2", "label": "Branch"}),
+            ),
+            make_event(
+                3,
+                EventType::EdgeCreated,
+                serde_json::json!({"from": "room_1", "to": "room_2", "bidirectional": true}),
+            ),
+            make_event(
+                4,
+                EventType::NodeMarked,
+                serde_json::json!({"node_id": "room_1", "mark": "spawn"}),
+            ),
         ];
         let proj = HashMapProjection::rebuild(&events);
 
@@ -312,9 +350,21 @@ mod tests {
     #[test]
     fn test_hashmap_projection_entity_events() {
         let events = vec![
-            make_event(1, EventType::EntityTypeCreated, serde_json::json!({"name": "Boss"})),
-            make_event(2, EventType::EntityInstanceCreated, serde_json::json!({"entity_type": "Boss", "instance_id": "boss_1"})),
-            make_event(3, EventType::EntityInstanceFieldSet, serde_json::json!({"instance_id": "boss_1", "field": "hp", "value": 500})),
+            make_event(
+                1,
+                EventType::EntityTypeCreated,
+                serde_json::json!({"name": "Boss"}),
+            ),
+            make_event(
+                2,
+                EventType::EntityInstanceCreated,
+                serde_json::json!({"entity_type": "Boss", "instance_id": "boss_1"}),
+            ),
+            make_event(
+                3,
+                EventType::EntityInstanceFieldSet,
+                serde_json::json!({"instance_id": "boss_1", "field": "hp", "value": 500}),
+            ),
         ];
         let proj = HashMapProjection::rebuild(&events);
 
@@ -327,8 +377,16 @@ mod tests {
     #[test]
     fn test_hashmap_projection_poi_events() {
         let events = vec![
-            make_event(1, EventType::NodeCreated, serde_json::json!({"node_id": "room_1", "label": "Room"})),
-            make_event(2, EventType::POIAttached, serde_json::json!({"node_id": "room_1", "poi_id": "poi_01", "entity_ref": "boss_1"})),
+            make_event(
+                1,
+                EventType::NodeCreated,
+                serde_json::json!({"node_id": "room_1", "label": "Room"}),
+            ),
+            make_event(
+                2,
+                EventType::POIAttached,
+                serde_json::json!({"node_id": "room_1", "poi_id": "poi_01", "entity_ref": "boss_1"}),
+            ),
         ];
         let proj = HashMapProjection::rebuild(&events);
 
@@ -339,7 +397,11 @@ mod tests {
         assert_eq!(pois[0]["entity_ref"], "boss_1");
 
         // Now detach
-        let detach_event = make_event(3, EventType::POIDetached, serde_json::json!({"node_id": "room_1", "poi_id": "poi_01"}));
+        let detach_event = make_event(
+            3,
+            EventType::POIDetached,
+            serde_json::json!({"node_id": "room_1", "poi_id": "poi_01"}),
+        );
         let mut proj2 = proj.clone();
         proj2.apply_event(&detach_event);
         let node2 = proj2.get("node:room_1").unwrap();

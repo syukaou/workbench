@@ -29,7 +29,10 @@ impl MemoryStore {
     pub fn append(&self, event: &Event) -> Result<Event> {
         let mut events = self.events.borrow_mut();
         // Enforce sequence uniqueness (same as SQLite UNIQUE constraint).
-        if events.iter().any(|e| e.seq == event.seq && e.aggregate_id == event.aggregate_id) {
+        if events
+            .iter()
+            .any(|e| e.seq == event.seq && e.aggregate_id == event.aggregate_id)
+        {
             return Err(crate::error::Error::Other(format!(
                 "UNIQUE constraint failed: events.aggregate_id, events.seq ({} / {})",
                 event.aggregate_id, event.seq
@@ -137,7 +140,13 @@ mod tests {
     fn test_get_up_to() {
         let store = MemoryStore::open_in_memory().unwrap();
         for i in 1..=5 {
-            let event = Event::new(i, "global", EventType::Set, serde_json::json!({"seq": i}), 1000);
+            let event = Event::new(
+                i,
+                "global",
+                EventType::Set,
+                serde_json::json!({"seq": i}),
+                1000,
+            );
             store.append(&event).unwrap();
         }
         let events = store.get_up_to("global", 3).unwrap();
