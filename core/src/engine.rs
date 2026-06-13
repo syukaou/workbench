@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::error::{Error, Result};
 use crate::event::{Event, EventType};
-use crate::log::EventStore;
+use crate::EventStore;
 use crate::projection::{HashMapProjection, Projection};
 
 /// A command to mutate the system state. Every command goes through
@@ -331,7 +331,7 @@ fn timestamp_ms() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::log::EventStore;
+    use crate::EventStore;
 
     fn setup() -> Engine {
         let store = EventStore::open_in_memory().unwrap();

@@ -1,8 +1,13 @@
 /// Core error types for the deterministic event-log engine.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[cfg(feature = "native")]
     #[error("SQLite error: {0}")]
     Sqlite(#[from] rusqlite::Error),
+
+    #[cfg(not(feature = "native"))]
+    #[error("Store error: {0}")]
+    Sqlite(String),
 
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),

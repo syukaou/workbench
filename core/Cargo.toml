@@ -4,11 +4,22 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["native"]
+native = ["rusqlite"]
+
 [dependencies]
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.31", features = ["bundled"], optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "1"
+wasm-bindgen = "0.2"
 
 [dev-dependencies]
 tempfile = "3"
