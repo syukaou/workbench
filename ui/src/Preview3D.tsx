@@ -33,7 +33,6 @@ function nodeColor(room: RoomNode): number {
 /** Build a small arrow cone mesh at tip position, pointing along direction. */
 function arrowCone(from: THREE.Vector3, to: THREE.Vector3, color: number): THREE.Mesh {
   const dir = new THREE.Vector3().subVectors(to, from).normalize();
-  const len = from.distanceTo(to);
   // Place cone just before target (so it touches the node box)
   const tip = to.clone().addScaledVector(dir, -0.25);
   const coneGeo = new THREE.ConeGeometry(0.12, 0.35, 8);
@@ -229,9 +228,10 @@ export default function Preview3D({ state }: Props) {
     animate();
 
     // ── Resize ───────────────────────────────────────────────────
+    const el = container;
     function onResize() {
-      const cw = container.clientWidth;
-      const ch = container.clientHeight;
+      const cw = el.clientWidth;
+      const ch = el.clientHeight;
       camera.aspect = cw / ch;
       camera.updateProjectionMatrix();
       renderer.setSize(cw, ch);

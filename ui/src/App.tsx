@@ -444,6 +444,8 @@ export default function App() {
         onRedo={handleRedo}
         mode={mode}
         onSetMode={setMode}
+        viewMode={viewMode}
+        onToggleView={() => setViewMode((v) => (v === '2d' ? '3d' : '2d'))}
         canUndo={canUndo}
         canRedo={canRedo}
         proposals={proposals}
@@ -458,14 +460,18 @@ export default function App() {
         coreReady={coreReady}
       />
       <div className="main-area">
-        <TopologyGraph
-          state={state}
-          onStateChange={handleStateChange}
-          onToggleEdge={handleToggleEdge}
-          onLabelEdge={handleLabelEdge}
-          onNodeSelect={handleNodeSelect}
-        />
-        {selectedNode && (
+        {viewMode === '2d' ? (
+          <TopologyGraph
+            state={state}
+            onStateChange={handleStateChange}
+            onToggleEdge={handleToggleEdge}
+            onLabelEdge={handleLabelEdge}
+            onNodeSelect={handleNodeSelect}
+          />
+        ) : (
+          <Preview3D state={state} />
+        )}
+        {viewMode === '2d' && selectedNode && (
           <PoiEditor
             nodeId={selectedNode.node_id}
             nodeLabel={selectedNode.label}
