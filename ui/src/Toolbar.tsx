@@ -10,6 +10,8 @@ interface Props {
   onRedo: () => void;
   mode: 'select' | 'add_edge';
   onSetMode: (m: 'select' | 'add_edge') => void;
+  viewMode: '2d' | '3d';
+  onToggleView: () => void;
   // AI Proposal
   proposals: Record<string, unknown>[] | null;
   proposalLoading: boolean;
@@ -48,6 +50,7 @@ function describeCommand(cmd: Record<string, unknown>): string {
 
 export default function Toolbar({
   state, onStateChange, canUndo, canRedo, onUndo, onRedo, mode, onSetMode,
+  viewMode, onToggleView,
   proposals, proposalLoading, onPropose, onAcceptAll, onRejectAll,
   onAcceptSingle, onRejectSingle, onSave, onLoad, coreReady,
 }: Props) {
@@ -132,6 +135,13 @@ export default function Toolbar({
             disabled={!coreReady}
           >
             📂 Load
+          </button>
+          <span className="toolbar-separator" />
+          <button
+            title={`Switch to ${viewMode === '2d' ? '3D preview' : '2D editor'}`}
+            onClick={onToggleView}
+          >
+            {viewMode === '2d' ? '🌐 3D' : '📐 2D'}
           </button>
           <span className="toolbar-separator" />
           <span className="toolbar-info">

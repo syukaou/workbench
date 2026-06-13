@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import TopologyGraph from './TopologyGraph';
+import Preview3D from './Preview3D';
 import Toolbar from './Toolbar';
 import PoiEditor from './PoiEditor';
 import {
@@ -20,6 +21,7 @@ export default function App() {
   const [state, setState] = useState<GraphState | null>(null);
   const [coreReady, setCoreReady] = useState(false);
   const [mode, setMode] = useState<'select' | 'add_edge'>('select');
+  const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d');
   const undoStackRef = useRef<GraphState[]>([]);
   const redoStackRef = useRef<GraphState[]>([]);
   const [canUndo, setCanUndo] = useState(false);
@@ -442,6 +444,8 @@ export default function App() {
         onRedo={handleRedo}
         mode={mode}
         onSetMode={setMode}
+        viewMode={viewMode}
+        onToggleView={() => setViewMode((v) => (v === '2d' ? '3d' : '2d'))}
         canUndo={canUndo}
         canRedo={canRedo}
         proposals={proposals}
@@ -456,14 +460,18 @@ export default function App() {
         coreReady={coreReady}
       />
       <div className="main-area">
-        <TopologyGraph
-          state={state}
-          onStateChange={handleStateChange}
-          onToggleEdge={handleToggleEdge}
-          onLabelEdge={handleLabelEdge}
-          onNodeSelect={handleNodeSelect}
-        />
-        {selectedNode && (
+        {viewMode === '2d' ? (
+          <TopologyGraph
+            state={state}
+            onStateChange={handleStateChange}
+            onToggleEdge={handleToggleEdge}
+            onLabelEdge={handleLabelEdge}
+            onNodeSelect={handleNodeSelect}
+          />
+        ) : (
+          <Preview3D state={state} />
+        )}
+        {viewMode === '2d' && selectedNode && (
           <PoiEditor
             nodeId={selectedNode.node_id}
             nodeLabel={selectedNode.label}
