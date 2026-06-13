@@ -827,6 +827,150 @@ mod tests {
         assert!(pois.is_empty());
     }
 
+    // ── U3-specific completion criteria (SPEC §5.7) ─────────────
+
+    #[test]
+    fn test_u3_topology_5_rooms_central_branches_shortcut() {
+        // SPEC U3 criterion 1: "5 rooms, central ↔ three branches bidirectional,
+        // one unidirectional shortcut" expressed as typed data.
+        let mut engine = setup();
+
+        // Create 5 rooms: central hall + 3 branch rooms + 1 dead-end
+        engine.execute(Command::CreateNode{node_id:"central".into(), label:"Central Hall".into()}).unwrap();
+        engine.execute(Command::CreateNode{node_id:"branch_a".into(), label:"Armory".into()}).unwrap();
+        engine.execute(Command::CreateNode{node_id:"branch_b".into(), label:"Library".into()}).unwrap();
+        engine.execute(Command::CreateNode{node_id:"branch_c".into(), label:"Throne Room".into()}).unwrap();
+        engine.execute(Command::CreateNode{node_id:"dead_end".into(), label:"Vault".into()}).unwrap();
+
+        // Central ↔ three branches (bidirectional)
+        engine.execute(Command::CreateEdge{from_node:"central".into(),to_node:"branch_a".into(),bidirectional:true}).unwrap();
+        engine.execute(Command::CreateEdge{from_node:"central".into(),to_node:"branch_b".into(),bidirectional:true}).unwrap();
+        engine.execute(Command::CreateEdge{from_node:"central".into(),to_node:"branch_c".into(),bidirectional:true}).unwrap();
+
+        // One unidirectional shortcut: branch_c → dead_end (one-way)
+        engine.execute(Command::CreateEdge{from_node:"branch_c".into(),to_node:"dead_end".into(),bidirectional:false}).unwrap();
+
+        // Mark spawn point on central
+        engine.execute(Command::MarkNode{node_id:"central".into(),mark:"spawn".into()}).unwrap();
+        // Mark shortcut on the one-way edge's target
+        engine.execute(Command::MarkNode{node_id:"dead_end".into(),mark:"shortcut".into()}).unwrap();
+
+        // Verify all 5 nodes exist
+        assert!(engine.state().get("node:central").is_some());
+        assert!(engine.state().get("node:branch_a").is_some());
+        assert!(engine.state().get("node:branch_b").is_some());
+        assert!(engine.state().get("node:branch_c").is_some());
+        assert!(engine.state().get("node:dead_end").is_some());
+
+        // Verify bidirectional edges
+        let e1 = engine.state().get("edge:central->branch_a").unwrap();
+        assert!(e1["bidirectional"].as_bool().unwrap());
+        let e2 = engine.state().get("edge:central->branch_b").unwrap();
+        assert!(e2["bidirectional"].as_bool().unwrap());
+        let e3 = engine.state().get("edge:central->branch_c").unwrap();
+        assert!(e3["bidirectional"].as_bool().unwrap());
+
+        // Verify unidirectional edge
+        let e4 = engine.state().get("edge:branch_c->dead_end").unwrap();
+        assert!(!e4["bidirectional"].as_bool().unwrap());
+
+        // Verify marks
+        let central = engine.state().get("node:central").unwrap();
+        assert!(central["marks"].as_array().unwrap().contains(&serde_json::json!("spawn")));
+        let vault = engine.state().get("node:dead_end").unwrap();
+        assert!(vault["marks"].as_array().unwrap().contains(&serde_json::json!("shortcut")));
+
+        // Verify everything went through event log
+        let history = engine.history().unwrap();
+        let node_count = history.iter().filter(|e| e.event_type == EventType::NodeCreated).count();
+        assert_eq!(node_count, 5);
+        let edge_count = history.iter().filter(|e| e.event_type == EventType::EdgeCreated).count();
+        assert_eq!(edge_count, 4);
+        let mark_count = history.iter().filter(|e| e.event_type == EventType::NodeMarked).count();
+        assert_eq!(mark_count, 2);
+
+        // Verify undo/redo: undo the shortcut mark, verify it's gone, redo it back
+        let seq_before = engine.current_seq();
+        engine.undo(1).unwrap();
+        let vault_undone = engine.state().get("node:dead_end").unwrap();
+        assert!(!vault_undone["marks"].as_array().unwrap().contains(&serde_json::json!("shortcut")));
+        engine.redo(1).unwrap();
+        let vault_redone = engine.state().get("node:dead_end").unwrap();
+        assert!(vault_redone["marks"].as_array().unwrap().contains(&serde_json::json!("shortcut")));
+        assert_eq!(engine.current_seq(), seq_before);
+    }
+
+    #[test]
+    fn test_u3_poi_with_boss_entity_reference() {
+        // SPEC U3 criterion 2: "某节点 POI 成功挂上 U2 的一个 Boss 实例"
+        let mut engine = setup();
+
+        // Create a node (room)
+        engine.execute(Command::CreateNode{node_id:"boss_room".into(), label:"Dragon's Lair".into()}).unwrap();
+
+        // U2: define Boss entity type
+        engine.execute(Command::CreateEntityType{name:"Boss".into()}).unwrap();
+
+        // U2: create Boss instance with fields
+        engine.execute(Command::CreateEntityInstance{entity_type:"Boss".into(), instance_id:"dragon_01".into()}).unwrap();
+        engine.execute(Command::SetEntityField{instance_id:"dragon_01".into(),field:"name".into(),value:serde_json::json!("Ancient Red Dragon")}).unwrap();
+        engine.execute(Command::SetEntityField{instance_id:"dragon_01".into(),field:"hp".into(),value:serde_json::json!(5000)}).unwrap();
+        engine.execute(Command::SetEntityField{instance_id:"dragon_01".into(),field:"difficulty".into(),value:serde_json::json!("nightmare")}).unwrap();
+
+        // U3: attach POI referencing the Boss instance
+        engine.execute(Command::AttachPOI{node_id:"boss_room".into(),poi_id:"poi_boss".into(),entity_ref:Some("dragon_01".into())}).unwrap();
+
+        // Verify POI is on the node with correct entity reference
+        let node = engine.state().get("node:boss_room").unwrap();
+        let pois = node["pois"].as_array().unwrap();
+        assert_eq!(pois.len(), 1);
+        assert_eq!(pois[0]["poi_id"], "poi_boss");
+        assert_eq!(pois[0]["entity_ref"], "dragon_01");
+
+        // Verify the referenced entity exists and has its fields intact
+        let boss = engine.state().get("entity_instance:dragon_01").unwrap();
+        assert_eq!(boss["type"], "Boss");
+        assert_eq!(boss["fields"]["name"], "Ancient Red Dragon");
+        assert_eq!(boss["fields"]["hp"], 5000);
+
+        // Verify all operations went through event log
+        let history = engine.history().unwrap();
+        let node_events: Vec<_> = history.iter().filter(|e| e.event_type == EventType::NodeCreated).collect();
+        assert_eq!(node_events.len(), 1);
+        let poi_events: Vec<_> = history.iter().filter(|e| e.event_type == EventType::POIAttached).collect();
+        assert_eq!(poi_events.len(), 1);
+
+        // Verify undo removes the POI, redo restores it
+        engine.undo(1).unwrap();
+        let node_undone = engine.state().get("node:boss_room").unwrap();
+        assert!(node_undone["pois"].as_array().unwrap().is_empty());
+        // But the entity instance still exists
+        assert!(engine.state().get("entity_instance:dragon_01").is_some());
+
+        engine.redo(1).unwrap();
+        let node_redone = engine.state().get("node:boss_room").unwrap();
+        assert_eq!(node_redone["pois"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_u3_unidirectional_edge_scenario() {
+        // Explicit test for unidirectional edge: one-way from A→B, B cannot reach A.
+        // This verifies edge directionality is stored and preserved.
+        let mut engine = setup();
+
+        engine.execute(Command::CreateNode{node_id:"a".into(), label:"Start".into()}).unwrap();
+        engine.execute(Command::CreateNode{node_id:"b".into(), label:"End".into()}).unwrap();
+
+        // Unidirectional: a → b
+        engine.execute(Command::CreateEdge{from_node:"a".into(),to_node:"b".into(),bidirectional:false}).unwrap();
+
+        let edge = engine.state().get("edge:a->b").unwrap();
+        assert!(!edge["bidirectional"].as_bool().unwrap());
+
+        // Verify the reverse edge does NOT exist (unidirectional means one-way)
+        assert!(engine.state().get("edge:b->a").is_none());
+    }
+
     // ── Invariant: domain events respect INV-2 & INV-5 ─────────────
 
     #[test]
@@ -989,12 +1133,15 @@ mod tests {
             "All field sets must appear in the append-only event log"
         );
 
-        // Verify undoable (INV-5): undo some sets, state reverts, then redo restores
-        let seq_before = engine.current_seq();
-        let undone = engine.undo(3).unwrap();
-        assert_eq!(undone, 3);
+        // Verify undoable (INV-5): undo past the hp field set, verify it's gone,
+        // then redo to restore everything.
+        // Total events: 8 (1 type + 2 instances + 5 field sets).
+        // Undo 5 to go back to seq 3 (before any field sets on boss_red).
+        let undone = engine.undo(5).unwrap();
+        assert_eq!(undone, 5);
+        assert_eq!(engine.current_seq(), 3);
         let red_after_undo = engine.state().get("entity_instance:boss_red").unwrap();
-        // The last 3 sets undone, so hp (one of them) should not be present in fields
+        // hp was set at seq 4; after undoing to seq 3 it must be absent
         assert!(
             red_after_undo
                 .get("fields")
@@ -1004,7 +1151,7 @@ mod tests {
             "Undo must revert the field sets via re-fold from log"
         );
 
-        engine.redo(3).unwrap();
+        engine.redo(5).unwrap();
         let red_after_redo = engine.state().get("entity_instance:boss_red").unwrap();
         assert_eq!(red_after_redo["fields"]["hp"], 150);
     }
