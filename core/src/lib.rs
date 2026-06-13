@@ -8,6 +8,7 @@
 pub mod error;
 pub mod event;
 pub mod log;
+pub mod projection;
 pub mod engine;
 pub mod contract;
 
@@ -15,6 +16,7 @@ pub mod contract;
 pub use contract::WorkbenchCore;
 pub use error::{Error, Result};
 pub use event::{Event, EventType};
+pub use projection::{HashMapProjection, Projection};
 
 #[cfg(test)]
 mod invariant_tests;

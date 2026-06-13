@@ -31,6 +31,8 @@ impl WorkbenchCore {
         Ok(WorkbenchCore { engine })
     }
 
+    // ── State queries ──────────────────────────────────────────────
+
     /// Get a snapshot of the current materialized state.
     pub fn get_state(&self) -> HashMap<String, serde_json::Value> {
         self.engine.state().clone()
@@ -45,6 +47,13 @@ impl WorkbenchCore {
     pub fn get_total_events(&self) -> Result<u64> {
         self.engine.total_events()
     }
+
+    /// Get the full event history (all events in the log, append-only).
+    pub fn get_history(&self) -> Result<Vec<Event>> {
+        self.engine.history()
+    }
+
+    // ── U1: Generic key-value ──────────────────────────────────────
 
     /// Execute a command: validate → serial append to event log → update state.
     ///
@@ -72,6 +81,119 @@ impl WorkbenchCore {
         self.execute(key, None)
     }
 
+    /// Execute a typed domain command directly.
+    pub fn execute_command(&mut self, command: Command) -> Result<Event> {
+        self.engine.execute(command)
+    }
+
+    // ── U2: Entity types and instances ─────────────────────────────
+
+    /// Define a new entity type (e.g. "Boss", "Item").
+    pub fn create_entity_type(&mut self, name: &str) -> Result<Event> {
+        self.engine.execute(Command::CreateEntityType {
+            name: name.to_string(),
+        })
+    }
+
+    /// Create an instance of an entity type.
+    pub fn create_entity_instance(
+        &mut self,
+        entity_type: &str,
+        instance_id: &str,
+    ) -> Result<Event> {
+        self.engine.execute(Command::CreateEntityInstance {
+            entity_type: entity_type.to_string(),
+            instance_id: instance_id.to_string(),
+        })
+    }
+
+    /// Set a field value on an entity instance.
+    pub fn set_entity_field(
+        &mut self,
+        instance_id: &str,
+        field: &str,
+        value: serde_json::Value,
+    ) -> Result<Event> {
+        self.engine.execute(Command::SetEntityField {
+            instance_id: instance_id.to_string(),
+            field: field.to_string(),
+            value,
+        })
+    }
+
+    // ── U3: Graph topology ─────────────────────────────────────────
+
+    /// Add a node (room/area) to the graph.
+    pub fn create_node(&mut self, node_id: &str, label: &str) -> Result<Event> {
+        self.engine.execute(Command::CreateNode {
+            node_id: node_id.to_string(),
+            label: label.to_string(),
+        })
+    }
+
+    /// Remove a node from the graph.
+    pub fn remove_node(&mut self, node_id: &str) -> Result<Event> {
+        self.engine.execute(Command::RemoveNode {
+            node_id: node_id.to_string(),
+        })
+    }
+
+    /// Add an edge between two nodes.
+    pub fn create_edge(
+        &mut self,
+        from_node: &str,
+        to_node: &str,
+        bidirectional: bool,
+    ) -> Result<Event> {
+        self.engine.execute(Command::CreateEdge {
+            from_node: from_node.to_string(),
+            to_node: to_node.to_string(),
+            bidirectional,
+        })
+    }
+
+    /// Remove an edge.
+    pub fn remove_edge(&mut self, from_node: &str, to_node: &str) -> Result<Event> {
+        self.engine.execute(Command::RemoveEdge {
+            from_node: from_node.to_string(),
+            to_node: to_node.to_string(),
+        })
+    }
+
+    /// Apply a semantic mark to a node (e.g. "spawn", "shortcut").
+    pub fn mark_node(&mut self, node_id: &str, mark: &str) -> Result<Event> {
+        self.engine.execute(Command::MarkNode {
+            node_id: node_id.to_string(),
+            mark: mark.to_string(),
+        })
+    }
+
+    // ── U3: POI ────────────────────────────────────────────────────
+
+    /// Attach a POI to a node, optionally referencing an entity instance.
+    pub fn attach_poi(
+        &mut self,
+        node_id: &str,
+        poi_id: &str,
+        entity_ref: Option<&str>,
+    ) -> Result<Event> {
+        self.engine.execute(Command::AttachPOI {
+            node_id: node_id.to_string(),
+            poi_id: poi_id.to_string(),
+            entity_ref: entity_ref.map(|s| s.to_string()),
+        })
+    }
+
+    /// Detach a POI from a node.
+    pub fn detach_poi(&mut self, node_id: &str, poi_id: &str) -> Result<Event> {
+        self.engine.execute(Command::DetachPOI {
+            node_id: node_id.to_string(),
+            poi_id: poi_id.to_string(),
+        })
+    }
+
+    // ── Undo / Redo ────────────────────────────────────────────────
+
     /// Undo `count` events. Returns the number actually undone.
     pub fn undo(&mut self, count: u32) -> Result<u32> {
         self.engine.undo(count)
@@ -92,10 +214,7 @@ impl WorkbenchCore {
         self.engine.redo_all()
     }
 
-    /// Get the full event history (all events in the log, append-only).
-    pub fn get_history(&self) -> Result<Vec<Event>> {
-        self.engine.history()
-    }
+    // ── Replay / INV-5 verification ────────────────────────────────
 
     /// Rebuild state from the event log — full replay from event seq 0.
     /// Used to verify INV-5: state = fold(events).

@@ -3,11 +3,13 @@ use std::collections::HashMap;
 use crate::error::{Error, Result};
 use crate::event::{Event, EventType};
 use crate::log::EventStore;
+use crate::projection::{HashMapProjection, Projection};
 
 /// A command to mutate the system state. Every command goes through
 /// validate → serialize → append to event log → update state (INV-2).
 #[derive(Debug, Clone)]
 pub enum Command {
+    // ── U1: Generic ──
     /// Set a key to a value.
     Set {
         key: String,
@@ -16,6 +18,63 @@ pub enum Command {
     /// Delete a key.
     Delete {
         key: String,
+    },
+
+    // ── U2: Entities ──
+    /// Define a new entity type.
+    CreateEntityType {
+        name: String,
+    },
+    /// Create an instance of an entity type.
+    CreateEntityInstance {
+        entity_type: String,
+        instance_id: String,
+    },
+    /// Set a field value on an entity instance.
+    SetEntityField {
+        instance_id: String,
+        field: String,
+        value: serde_json::Value,
+    },
+
+    // ── U3: Graph topology ──
+    /// Add a node (room/area) to the graph.
+    CreateNode {
+        node_id: String,
+        label: String,
+    },
+    /// Remove a node from the graph.
+    RemoveNode {
+        node_id: String,
+    },
+    /// Add an edge between two nodes.
+    CreateEdge {
+        from_node: String,
+        to_node: String,
+        bidirectional: bool,
+    },
+    /// Remove an edge.
+    RemoveEdge {
+        from_node: String,
+        to_node: String,
+    },
+    /// Apply a semantic mark to a node.
+    MarkNode {
+        node_id: String,
+        mark: String,
+    },
+
+    // ── U3: POI ──
+    /// Attach a POI to a node, optionally referencing an entity instance.
+    AttachPOI {
+        node_id: String,
+        poi_id: String,
+        entity_ref: Option<String>,
+    },
+    /// Detach a POI from a node.
+    DetachPOI {
+        node_id: String,
+        poi_id: String,
     },
 }
 
@@ -30,8 +89,8 @@ pub struct Engine {
     /// The latest sequence number applied to the current state.
     /// This is the undo/redo cursor position.
     current_seq: u64,
-    /// The materialized state at `current_seq`.
-    state: HashMap<String, serde_json::Value>,
+    /// The materialized state at `current_seq`, maintained by a HashMapProjection.
+    state: HashMapProjection,
 }
 
 impl Engine {
@@ -40,7 +99,7 @@ impl Engine {
     pub fn new(store: EventStore, aggregate_id: impl Into<String>) -> Result<Self> {
         let aggregate_id = aggregate_id.into();
         let current_seq = store.event_count(&aggregate_id)?;
-        let state = fold_events(&store, &aggregate_id, current_seq)?;
+        let state = fold_projection(&store, &aggregate_id, current_seq)?;
 
         Ok(Engine {
             store,
@@ -52,7 +111,7 @@ impl Engine {
 
     /// Get a snapshot of the current materialized state.
     pub fn state(&self) -> &HashMap<String, serde_json::Value> {
-        &self.state
+        self.state.as_map()
     }
 
     /// Get the current sequence number (the undo/redo cursor position).
@@ -85,6 +144,64 @@ impl Engine {
                 EventType::Delete,
                 serde_json::json!({"key": key}),
             ),
+            Command::CreateEntityType { name } => (
+                EventType::EntityTypeCreated,
+                serde_json::json!({"name": name}),
+            ),
+            Command::CreateEntityInstance {
+                entity_type,
+                instance_id,
+            } => (
+                EventType::EntityInstanceCreated,
+                serde_json::json!({"entity_type": entity_type, "instance_id": instance_id}),
+            ),
+            Command::SetEntityField {
+                instance_id,
+                field,
+                value,
+            } => (
+                EventType::EntityInstanceFieldSet,
+                serde_json::json!({"instance_id": instance_id, "field": field, "value": value}),
+            ),
+            Command::CreateNode { node_id, label } => (
+                EventType::NodeCreated,
+                serde_json::json!({"node_id": node_id, "label": label}),
+            ),
+            Command::RemoveNode { node_id } => (
+                EventType::NodeRemoved,
+                serde_json::json!({"node_id": node_id}),
+            ),
+            Command::CreateEdge {
+                from_node,
+                to_node,
+                bidirectional,
+            } => (
+                EventType::EdgeCreated,
+                serde_json::json!({"from": from_node, "to": to_node, "bidirectional": bidirectional}),
+            ),
+            Command::RemoveEdge {
+                from_node,
+                to_node,
+            } => (
+                EventType::EdgeRemoved,
+                serde_json::json!({"from": from_node, "to": to_node}),
+            ),
+            Command::MarkNode { node_id, mark } => (
+                EventType::NodeMarked,
+                serde_json::json!({"node_id": node_id, "mark": mark}),
+            ),
+            Command::AttachPOI {
+                node_id,
+                poi_id,
+                entity_ref,
+            } => (
+                EventType::POIAttached,
+                serde_json::json!({"node_id": node_id, "poi_id": poi_id, "entity_ref": entity_ref}),
+            ),
+            Command::DetachPOI { node_id, poi_id } => (
+                EventType::POIDetached,
+                serde_json::json!({"node_id": node_id, "poi_id": poi_id}),
+            ),
         };
 
         // Validate: check that the payload is valid JSON.
@@ -96,8 +213,8 @@ impl Engine {
         let event = Event::new(next_seq, &self.aggregate_id, event_type, payload, timestamp);
         let persisted = self.store.append(&event)?;
 
-        // Apply the event to the current state to keep it materialized.
-        apply_event(&mut self.state, &persisted);
+        // Apply the event to the current state via projection.
+        self.state.apply_event(&persisted);
         self.current_seq = persisted.seq;
 
         Ok(persisted)
@@ -117,7 +234,7 @@ impl Engine {
         let undone = (self.current_seq - target_seq) as u32;
 
         self.current_seq = target_seq;
-        self.state = fold_events(&self.store, &self.aggregate_id, target_seq)?;
+        self.state = fold_projection(&self.store, &self.aggregate_id, target_seq)?;
 
         Ok(undone)
     }
@@ -130,7 +247,7 @@ impl Engine {
             return Ok(0);
         }
         self.current_seq = 0;
-        self.state = fold_events(&self.store, &self.aggregate_id, 0)?;
+        self.state = fold_projection(&self.store, &self.aggregate_id, 0)?;
         Ok(undone)
     }
 
@@ -150,7 +267,7 @@ impl Engine {
         let redone = (target_seq - self.current_seq) as u32;
 
         self.current_seq = target_seq;
-        self.state = fold_events(&self.store, &self.aggregate_id, target_seq)?;
+        self.state = fold_projection(&self.store, &self.aggregate_id, target_seq)?;
 
         Ok(redone)
     }
@@ -164,7 +281,7 @@ impl Engine {
         }
         let redone = (total - self.current_seq) as u32;
         self.current_seq = total;
-        self.state = fold_events(&self.store, &self.aggregate_id, total)?;
+        self.state = fold_projection(&self.store, &self.aggregate_id, total)?;
         Ok(redone)
     }
 
@@ -178,47 +295,28 @@ impl Engine {
     /// This is used for INV-5 verification: replay must produce identical state.
     pub fn rebuild(&self) -> Result<HashMap<String, serde_json::Value>> {
         let total = self.store.event_count(&self.aggregate_id)?;
-        fold_events(&self.store, &self.aggregate_id, total)
+        let proj = fold_projection(&self.store, &self.aggregate_id, total)?;
+        Ok(proj.as_map().clone())
     }
 
     /// Rebuild the state up to a specific sequence number.
     pub fn rebuild_up_to(&self, seq: u64) -> Result<HashMap<String, serde_json::Value>> {
-        fold_events(&self.store, &self.aggregate_id, seq)
+        let proj = fold_projection(&self.store, &self.aggregate_id, seq)?;
+        Ok(proj.as_map().clone())
     }
 }
 
-/// Fold events from seq 1 up to `max_seq` into a HashMap state.
-fn fold_events(store: &EventStore, aggregate_id: &str, max_seq: u64) -> Result<HashMap<String, serde_json::Value>> {
-    let mut state = HashMap::new();
+/// Fold events from seq 1 up to `max_seq` into a HashMapProjection.
+///
+/// Uses the Projection trait's deterministic fold: apply_event for each event
+/// in sequence order. This is the canonical state reconstruction path (INV-5).
+fn fold_projection(store: &EventStore, aggregate_id: &str, max_seq: u64) -> Result<HashMapProjection> {
     if max_seq == 0 {
-        return Ok(state);
+        return Ok(HashMapProjection::new());
     }
 
     let events = store.get_up_to(aggregate_id, max_seq)?;
-    for event in &events {
-        apply_event(&mut state, event);
-    }
-
-    Ok(state)
-}
-
-/// Apply a single event to the materialized state.
-fn apply_event(state: &mut HashMap<String, serde_json::Value>, event: &Event) {
-    match event.event_type {
-        EventType::Set => {
-            if let (Some(key), Some(value)) = (
-                event.payload.get("key").and_then(|v| v.as_str()),
-                event.payload.get("value"),
-            ) {
-                state.insert(key.to_string(), value.clone());
-            }
-        }
-        EventType::Delete => {
-            if let Some(key) = event.payload.get("key").and_then(|v| v.as_str()) {
-                state.remove(key);
-            }
-        }
-    }
+    Ok(HashMapProjection::rebuild(&events))
 }
 
 /// Get the current time in milliseconds since Unix epoch.
@@ -524,5 +622,289 @@ mod tests {
 
         assert_eq!(engine.current_seq(), 4);
         assert_eq!(engine.total_events().unwrap(), 4);
+    }
+
+    // ── Domain event tests (U2: Entities) ─────────────────────────
+
+    #[test]
+    fn test_create_entity_type() {
+        let mut engine = setup();
+        let event = engine
+            .execute(Command::CreateEntityType {
+                name: "Boss".into(),
+            })
+            .unwrap();
+        assert_eq!(event.event_type, EventType::EntityTypeCreated);
+        assert_eq!(engine.state().get("entity_type:Boss").unwrap(), &serde_json::json!({"fields": {}}));
+    }
+
+    #[test]
+    fn test_create_entity_instance() {
+        let mut engine = setup();
+        engine
+            .execute(Command::CreateEntityType {
+                name: "Boss".into(),
+            })
+            .unwrap();
+        let event = engine
+            .execute(Command::CreateEntityInstance {
+                entity_type: "Boss".into(),
+                instance_id: "boss_1".into(),
+            })
+            .unwrap();
+        assert_eq!(event.event_type, EventType::EntityInstanceCreated);
+        let inst = engine.state().get("entity_instance:boss_1").unwrap();
+        assert_eq!(inst["type"], "Boss");
+    }
+
+    #[test]
+    fn test_set_entity_field() {
+        let mut engine = setup();
+        engine
+            .execute(Command::CreateEntityType {
+                name: "Boss".into(),
+            })
+            .unwrap();
+        engine
+            .execute(Command::CreateEntityInstance {
+                entity_type: "Boss".into(),
+                instance_id: "boss_1".into(),
+            })
+            .unwrap();
+        engine
+            .execute(Command::SetEntityField {
+                instance_id: "boss_1".into(),
+                field: "hp".into(),
+                value: serde_json::json!(500),
+            })
+            .unwrap();
+        let inst = engine.state().get("entity_instance:boss_1").unwrap();
+        assert_eq!(inst["fields"]["hp"], 500);
+    }
+
+    // ── Domain event tests (U3: Graph topology) ────────────────────
+
+    #[test]
+    fn test_create_node() {
+        let mut engine = setup();
+        let event = engine
+            .execute(Command::CreateNode {
+                node_id: "room_1".into(),
+                label: "Central Hall".into(),
+            })
+            .unwrap();
+        assert_eq!(event.event_type, EventType::NodeCreated);
+        let node = engine.state().get("node:room_1").unwrap();
+        assert_eq!(node["label"], "Central Hall");
+        assert!(node["marks"].as_array().unwrap().is_empty());
+        assert!(node["pois"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_remove_node() {
+        let mut engine = setup();
+        engine
+            .execute(Command::CreateNode {
+                node_id: "room_1".into(),
+                label: "temp".into(),
+            })
+            .unwrap();
+        engine
+            .execute(Command::RemoveNode {
+                node_id: "room_1".into(),
+            })
+            .unwrap();
+        assert!(engine.state().get("node:room_1").is_none());
+    }
+
+    #[test]
+    fn test_create_edge() {
+        let mut engine = setup();
+        engine
+            .execute(Command::CreateNode {
+                node_id: "a".into(),
+                label: "A".into(),
+            })
+            .unwrap();
+        engine
+            .execute(Command::CreateNode {
+                node_id: "b".into(),
+                label: "B".into(),
+            })
+            .unwrap();
+        let event = engine
+            .execute(Command::CreateEdge {
+                from_node: "a".into(),
+                to_node: "b".into(),
+                bidirectional: true,
+            })
+            .unwrap();
+        assert_eq!(event.event_type, EventType::EdgeCreated);
+        let edge = engine.state().get("edge:a->b").unwrap();
+        assert!(edge["bidirectional"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn test_mark_node() {
+        let mut engine = setup();
+        engine
+            .execute(Command::CreateNode {
+                node_id: "room_1".into(),
+                label: "Spawn Room".into(),
+            })
+            .unwrap();
+        engine
+            .execute(Command::MarkNode {
+                node_id: "room_1".into(),
+                mark: "spawn".into(),
+            })
+            .unwrap();
+        let node = engine.state().get("node:room_1").unwrap();
+        let marks = node["marks"].as_array().unwrap();
+        assert_eq!(marks[0], "spawn");
+    }
+
+    // ── Domain event tests (U3: POI) ───────────────────────────────
+
+    #[test]
+    fn test_attach_poi() {
+        let mut engine = setup();
+        engine
+            .execute(Command::CreateNode {
+                node_id: "room_1".into(),
+                label: "Boss Room".into(),
+            })
+            .unwrap();
+        engine
+            .execute(Command::CreateEntityType {
+                name: "Boss".into(),
+            })
+            .unwrap();
+        engine
+            .execute(Command::CreateEntityInstance {
+                entity_type: "Boss".into(),
+                instance_id: "boss_1".into(),
+            })
+            .unwrap();
+        engine
+            .execute(Command::AttachPOI {
+                node_id: "room_1".into(),
+                poi_id: "poi_01".into(),
+                entity_ref: Some("boss_1".into()),
+            })
+            .unwrap();
+        let node = engine.state().get("node:room_1").unwrap();
+        let pois = node["pois"].as_array().unwrap();
+        assert_eq!(pois.len(), 1);
+        assert_eq!(pois[0]["poi_id"], "poi_01");
+        assert_eq!(pois[0]["entity_ref"], "boss_1");
+    }
+
+    #[test]
+    fn test_detach_poi() {
+        let mut engine = setup();
+        engine
+            .execute(Command::CreateNode {
+                node_id: "room_1".into(),
+                label: "Room".into(),
+            })
+            .unwrap();
+        engine
+            .execute(Command::AttachPOI {
+                node_id: "room_1".into(),
+                poi_id: "poi_01".into(),
+                entity_ref: None,
+            })
+            .unwrap();
+        engine
+            .execute(Command::DetachPOI {
+                node_id: "room_1".into(),
+                poi_id: "poi_01".into(),
+            })
+            .unwrap();
+        let node = engine.state().get("node:room_1").unwrap();
+        let pois = node["pois"].as_array().unwrap();
+        assert!(pois.is_empty());
+    }
+
+    // ── Invariant: domain events respect INV-2 & INV-5 ─────────────
+
+    #[test]
+    fn test_domain_events_in_event_log_inv2() {
+        let mut engine = setup();
+        let initial = engine.total_events().unwrap();
+
+        engine
+            .execute(Command::CreateNode {
+                node_id: "a".into(),
+                label: "A".into(),
+            })
+            .unwrap();
+        engine
+            .execute(Command::CreateEntityType {
+                name: "Item".into(),
+            })
+            .unwrap();
+
+        assert_eq!(engine.total_events().unwrap(), initial + 2);
+        let history = engine.history().unwrap();
+        assert_eq!(history[0].event_type, EventType::NodeCreated);
+        assert_eq!(history[1].event_type, EventType::EntityTypeCreated);
+    }
+
+    #[test]
+    fn test_domain_events_replay_inv5() {
+        let mut engine = setup();
+        engine
+            .execute(Command::CreateNode {
+                node_id: "a".into(),
+                label: "A".into(),
+            })
+            .unwrap();
+        engine
+            .execute(Command::CreateNode {
+                node_id: "b".into(),
+                label: "B".into(),
+            })
+            .unwrap();
+        engine
+            .execute(Command::CreateEdge {
+                from_node: "a".into(),
+                to_node: "b".into(),
+                bidirectional: false,
+            })
+            .unwrap();
+
+        let rebuilt = engine.rebuild().unwrap();
+        assert_eq!(engine.state(), &rebuilt,
+            "INV-5: domain event replay must produce identical state"
+        );
+    }
+
+    #[test]
+    fn test_domain_events_undo_redo() {
+        let mut engine = setup();
+        engine
+            .execute(Command::CreateNode {
+                node_id: "a".into(),
+                label: "A".into(),
+            })
+            .unwrap();
+        engine
+            .execute(Command::MarkNode {
+                node_id: "a".into(),
+                mark: "spawn".into(),
+            })
+            .unwrap();
+
+        // Undo the mark
+        engine.undo(1).unwrap();
+        let node = engine.state().get("node:a").unwrap();
+        assert!(node["marks"].as_array().unwrap().is_empty());
+
+        // Redo the mark
+        engine.redo(1).unwrap();
+        let node = engine.state().get("node:a").unwrap();
+        assert_eq!(node["marks"].as_array().unwrap()[0], "spawn");
     }
 }
