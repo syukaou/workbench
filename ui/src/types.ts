@@ -18,6 +18,7 @@ export interface EdgeDef {
   from_node: string;
   to_node: string;
   bidirectional: boolean;
+  label?: string;
 }
 
 export interface GraphState {

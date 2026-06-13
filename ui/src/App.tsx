@@ -173,6 +173,23 @@ export default function App() {
     [state, pushUndo],
   );
 
+  // ── Edge label ───────────────────────────────────────────────────
+
+  const handleLabelEdge = useCallback(
+    (from: string, to: string, label: string) => {
+      if (!state) return;
+      pushUndo(state);
+      const edges = state.edges.map((e) => {
+        if (e.from_node === from && e.to_node === to) {
+          return { ...e, label: label || undefined };
+        }
+        return e;
+      });
+      setState({ ...state, edges });
+    },
+    [state, pushUndo],
+  );
+
   // ── Node click (add_edge mode) ────────────────────────────────────
 
   const handleNodeClick = useCallback(
@@ -443,6 +460,7 @@ export default function App() {
           state={state}
           onStateChange={handleStateChange}
           onToggleEdge={handleToggleEdge}
+          onLabelEdge={handleLabelEdge}
           onNodeSelect={handleNodeSelect}
         />
         {selectedNode && (

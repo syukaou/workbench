@@ -56,11 +56,16 @@
   background: #334155;
   color: #e2e8f0;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
 }
 
 .toolbar-buttons button:hover:not(:disabled) {
   background: #475569;
+  transform: scale(1.03);
+}
+
+.toolbar-buttons button:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 .toolbar-buttons button:disabled {
@@ -350,18 +355,18 @@
   position: absolute;
   top: -8px;
   right: -8px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
+  padding: 1px 6px;
+  border-radius: 3px;
   background: #3b82f6;
   color: #fff;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-  border: 2px solid #1e293b;
+  line-height: 1.4;
+  border: 1px solid #1e293b;
+  white-space: nowrap;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ── POI Editor panel ────────────────────────────────────────────── */
