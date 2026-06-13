@@ -907,4 +907,105 @@ mod tests {
         let node = engine.state().get("node:a").unwrap();
         assert_eq!(node["marks"].as_array().unwrap()[0], "spawn");
     }
+
+    #[test]
+    fn test_u2_boss_entity_model_a_minimal() {
+        let mut engine = setup();
+
+        // Define Boss type (含 hp 等数值字段)
+        engine
+            .execute(Command::CreateEntityType {
+                name: "Boss".into(),
+            })
+            .unwrap();
+
+        // Create two instances
+        engine
+            .execute(Command::CreateEntityInstance {
+                entity_type: "Boss".into(),
+                instance_id: "boss_red".into(),
+            })
+            .unwrap();
+        engine
+            .execute(Command::CreateEntityInstance {
+                entity_type: "Boss".into(),
+                instance_id: "boss_blue".into(),
+            })
+            .unwrap();
+
+        // Fill different values, demonstrating built-in field types:
+        // numeric (hp), text (name), enum (difficulty as string), reference (minion_ref as id)
+        engine
+            .execute(Command::SetEntityField {
+                instance_id: "boss_red".into(),
+                field: "hp".into(),
+                value: serde_json::json!(150),
+            })
+            .unwrap();
+        engine
+            .execute(Command::SetEntityField {
+                instance_id: "boss_red".into(),
+                field: "name".into(),
+                value: serde_json::json!("Red Dragon"),
+            })
+            .unwrap();
+        engine
+            .execute(Command::SetEntityField {
+                instance_id: "boss_red".into(),
+                field: "difficulty".into(),
+                value: serde_json::json!("hard"),
+            })
+            .unwrap();
+        engine
+            .execute(Command::SetEntityField {
+                instance_id: "boss_red".into(),
+                field: "minion_ref".into(),
+                value: serde_json::json!("minion_001"),
+            })
+            .unwrap();
+        engine
+            .execute(Command::SetEntityField {
+                instance_id: "boss_blue".into(),
+                field: "hp".into(),
+                value: serde_json::json!(300),
+            })
+            .unwrap();
+
+        // Verify state has the values
+        let red = engine.state().get("entity_instance:boss_red").unwrap();
+        assert_eq!(red["fields"]["hp"], 150);
+        assert_eq!(red["fields"]["name"], "Red Dragon");
+        let blue = engine.state().get("entity_instance:boss_blue").unwrap();
+        assert_eq!(blue["fields"]["hp"], 300);
+
+        // Verify all changes went through the event log (INV-2)
+        let history = engine.history().unwrap();
+        let field_events: Vec<_> = history
+            .iter()
+            .filter(|e| e.event_type == EventType::EntityInstanceFieldSet)
+            .collect();
+        assert!(
+            field_events.len() >= 5,
+            "All field sets must appear in the append-only event log"
+        );
+
+        // Verify undoable (INV-5): undo some sets, state reverts, then redo restores
+        let seq_before = engine.current_seq();
+        let undone = engine.undo(3).unwrap();
+        assert_eq!(undone, 3);
+        let red_after_undo = engine.state().get("entity_instance:boss_red").unwrap();
+        // The last 3 sets undone, so hp (one of them) should not be present in fields
+        assert!(
+            red_after_undo
+                .get("fields")
+                .unwrap()
+                .get("hp")
+                .is_none(),
+            "Undo must revert the field sets via re-fold from log"
+        );
+
+        engine.redo(3).unwrap();
+        let red_after_redo = engine.state().get("entity_instance:boss_red").unwrap();
+        assert_eq!(red_after_redo["fields"]["hp"], 150);
+    }
 }
