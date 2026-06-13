@@ -2,7 +2,7 @@
  * WASM Core Bridge — loads the Rust workbench-core via WebAssembly
  * and exposes get_state() / execute_command() to the React frontend.
  */
-import init, { get_state as wasmGetState, execute_command as wasmExecute } from './core-pkg/workbench_core';
+import init, { get_state as wasmGetState, execute_command as wasmExecute, propose as wasmPropose } from './core-pkg/workbench_core';
 // Vite will resolve this to the hashed asset URL at build time
 import wasmUrl from './core-pkg/workbench_core_bg.wasm?url';
 
@@ -42,4 +42,14 @@ export function executeCoreCommand(cmdObj: Record<string, unknown>): {
   const result = wasmExecute(JSON.stringify(cmdObj));
   // wasmExecute returns a JsValue (stringified JSON)
   return JSON.parse(result as string);
+}
+
+/** Generate topology proposals from a natural language intent. */
+export function proposeViaCore(intent: string): Record<string, unknown>[] {
+  if (!ready) {
+    throw new Error('Core not initialized. Call ensureCore() first.');
+  }
+  const result = wasmPropose(intent);
+  // wasmPropose returns a JsValue (stringified JSON array)
+  return JSON.parse(result as string) as Record<string, unknown>[];
 }

@@ -31,6 +31,28 @@ export function get_state() {
     const ret = wasm.get_state();
     return ret;
 }
+
+/**
+ * Generate topology proposals from a natural language intent.
+ *
+ * In WASM, we use a mock proposal generator (CLI is native-only, INV-4).
+ * Returns a JSON array of command objects ready for `execute_command`.
+ *
+ * The mock generator parses keywords from the intent:
+ * - "branch" / "fork" → creates hub with branch nodes
+ * - "loop" / "circle" → creates a cycle
+ * - "shortcut" → creates a one-way shortcut edge
+ * - "secret" → creates a hidden room with one-way entrance
+ * - Otherwise → creates a simple linear chain
+ * @param {string} intent
+ * @returns {any}
+ */
+export function propose(intent) {
+    const ptr0 = passStringToWasm0(intent, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.propose(ptr0, len0);
+    return ret;
+}
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,

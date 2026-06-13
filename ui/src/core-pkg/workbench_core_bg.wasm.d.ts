@@ -2,6 +2,7 @@
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
 export const execute_command: (a: number, b: number) => any;
+export const propose: (a: number, b: number) => any;
 export const get_state: () => any;
 export const __wbindgen_externrefs: WebAssembly.Table;
 export const __wbindgen_malloc: (a: number, b: number) => number;

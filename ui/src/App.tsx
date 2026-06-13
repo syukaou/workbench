@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import TopologyGraph from './TopologyGraph';
 import Toolbar from './Toolbar';
-import { loadState, executeCommand, loadMockState, setPosition } from './mockData';
+import { loadState, executeCommand, loadMockState, setPosition, requestProposal } from './mockData';
 import type { GraphState } from './types';
 import './App.css';
 
@@ -14,6 +14,10 @@ export default function App() {
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const edgeSourceRef = useRef<string | null>(null);
+
+  // ── AI Proposal state ──────────────────────────────────────────────
+  const [proposals, setProposals] = useState<Record<string, unknown>[] | null>(null);
+  const [proposalLoading, setProposalLoading] = useState(false);
 
   // ── Init: load from WASM core (fallback to mock) ──────────────────
 
@@ -174,6 +178,64 @@ export default function App() {
     [mode, state, pushUndo, coreReady],
   );
 
+  // ── AI Proposal handlers ──────────────────────────────────────────
+
+  const handlePropose = useCallback(async (intent: string) => {
+    setProposalLoading(true);
+    setProposals(null);
+    try {
+      const cmds = await requestProposal(intent);
+      setProposals(cmds);
+    } catch (err) {
+      console.warn('Proposal failed:', err);
+      setProposals([]);
+    } finally {
+      setProposalLoading(false);
+    }
+  }, []);
+
+  const handleAcceptProposals = useCallback(async () => {
+    if (!proposals || !state) return;
+    // Execute all proposals sequentially
+    const newCommands = [...proposals];
+    setProposals(null);
+    for (const cmd of newCommands) {
+      try {
+        const updatedState = await executeCommand(cmd);
+        setState(updatedState);
+      } catch (err) {
+        console.warn('Command execution failed:', err);
+      }
+    }
+    // Reload complete state from core
+    if (coreReady) {
+      try {
+        const freshState = await loadState();
+        setState(freshState);
+      } catch { /* keep current state */ }
+    }
+  }, [proposals, state, coreReady]);
+
+  const handleRejectProposals = useCallback(() => {
+    setProposals(null);
+  }, []);
+
+  const handleAcceptSingle = useCallback(async (cmd: Record<string, unknown>) => {
+    if (!state) return;
+    try {
+      const updatedState = await executeCommand(cmd);
+      setState(updatedState);
+      // Remove from proposals
+      setProposals((prev) => prev?.filter((c) => c !== cmd) ?? null);
+    } catch (err) {
+      console.warn('Command execution failed:', err);
+    }
+  }, [state]);
+
+  const handleRejectSingle = useCallback((cmd: Record<string, unknown>) => {
+    setProposals((prev) => prev?.filter((c) => c !== cmd) ?? null);
+  }, []);
+
   // ── Loading state ─────────────────────────────────────────────────
 
   if (!state) {
@@ -199,6 +261,13 @@ export default function App() {
         onSetMode={setMode}
         canUndo={canUndo}
         canRedo={canRedo}
+        proposals={proposals}
+        proposalLoading={proposalLoading}
+        onPropose={handlePropose}
+        onAcceptAll={handleAcceptProposals}
+        onRejectAll={handleRejectProposals}
+        onAcceptSingle={handleAcceptSingle}
+        onRejectSingle={handleRejectSingle}
       />
       <TopologyGraph
         state={state}

@@ -5,7 +5,7 @@
  * UI positions (x, y) are managed locally in React state.
  */
 import type { GraphState, RoomNode, EdgeDef } from './types';
-import { ensureCore, getCoreState, executeCoreCommand } from './coreBridge';
+import { ensureCore, getCoreState, executeCoreCommand, proposeViaCore } from './coreBridge';
 
 // ── Local position store (not in core) ───────────────────────────────
 
@@ -95,6 +95,63 @@ export async function executeCommand(cmdObj: Record<string, unknown>): Promise<G
   // Reload full state from core after mutation
   const coreState = getCoreState();
   return coreStateToGraphState(coreState);
+}
+
+// ── AI Proposal ────────────────────────────────────────────────────────
+
+/**
+ * Request topology proposals from the WASM core (mock in WASM).
+ * Falls back to a local mock if core is unavailable.
+ */
+export async function requestProposal(intent: string): Promise<Record<string, unknown>[]> {
+  try {
+    await ensureCore();
+    return proposeViaCore(intent);
+  } catch {
+    // Core unavailable — use local mock
+    console.warn('Core unavailable for proposal, using local mock');
+    return mockProposeLocal(intent);
+  }
+}
+
+/** Local mock proposal generator matching the Rust mock keyword logic. */
+function mockProposeLocal(intent: string): Record<string, unknown>[] {
+  const lower = intent.toLowerCase();
+  const cmds: Record<string, unknown>[] = [];
+
+  if (lower.includes('branch') || lower.includes('fork') || lower.includes('hub')) {
+    cmds.push({ CreateNode: { node_id: 'hub', label: 'Central Hub' } });
+    cmds.push({ CreateNode: { node_id: 'branch_a', label: 'Branch A' } });
+    cmds.push({ CreateNode: { node_id: 'branch_b', label: 'Branch B' } });
+    cmds.push({ CreateEdge: { from_node: 'hub', to_node: 'branch_a', bidirectional: true } });
+    cmds.push({ CreateEdge: { from_node: 'hub', to_node: 'branch_b', bidirectional: true } });
+    cmds.push({ MarkNode: { node_id: 'hub', mark: 'spawn' } });
+  } else if (lower.includes('loop') || lower.includes('circle') || lower.includes('cycle')) {
+    cmds.push({ CreateNode: { node_id: 'loop_a', label: 'Loop A' } });
+    cmds.push({ CreateNode: { node_id: 'loop_b', label: 'Loop B' } });
+    cmds.push({ CreateNode: { node_id: 'loop_c', label: 'Loop C' } });
+    cmds.push({ CreateEdge: { from_node: 'loop_a', to_node: 'loop_b', bidirectional: true } });
+    cmds.push({ CreateEdge: { from_node: 'loop_b', to_node: 'loop_c', bidirectional: true } });
+    cmds.push({ CreateEdge: { from_node: 'loop_c', to_node: 'loop_a', bidirectional: true } });
+    cmds.push({ MarkNode: { node_id: 'loop_a', mark: 'spawn' } });
+  } else if (lower.includes('shortcut') || lower.includes('skip')) {
+    cmds.push({ CreateNode: { node_id: 'start', label: 'Start' } });
+    cmds.push({ CreateNode: { node_id: 'mid', label: 'Midway' } });
+    cmds.push({ CreateNode: { node_id: 'end', label: 'End' } });
+    cmds.push({ CreateEdge: { from_node: 'start', to_node: 'mid', bidirectional: true } });
+    cmds.push({ CreateEdge: { from_node: 'mid', to_node: 'end', bidirectional: true } });
+    cmds.push({ CreateEdge: { from_node: 'start', to_node: 'end', bidirectional: false } });
+    cmds.push({ MarkNode: { node_id: 'start', mark: 'spawn' } });
+    cmds.push({ MarkNode: { node_id: 'end', mark: 'shortcut' } });
+  } else {
+    cmds.push({ CreateNode: { node_id: 'room_1', label: 'Room 1' } });
+    cmds.push({ CreateNode: { node_id: 'room_2', label: 'Room 2' } });
+    cmds.push({ CreateNode: { node_id: 'room_3', label: 'Room 3' } });
+    cmds.push({ CreateEdge: { from_node: 'room_1', to_node: 'room_2', bidirectional: true } });
+    cmds.push({ CreateEdge: { from_node: 'room_2', to_node: 'room_3', bidirectional: true } });
+    cmds.push({ MarkNode: { node_id: 'room_1', mark: 'spawn' } });
+  }
+  return cmds;
 }
 
 // ── Fallback mock (for when WASM is unavailable) ─────────────────────

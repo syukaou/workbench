@@ -1,7 +1,8 @@
-//! WASM IPC bridge: exposes get_state() and execute_command() to JavaScript.
+//! WASM IPC bridge: exposes get_state(), execute_command(), and propose() to JavaScript.
 //!
 //! Uses a thread-local in-memory WorkbenchCore instance (no SQLite, no filesystem).
-//! The core is lazily initialized on first access.
+//! The core is lazily initialized on first access and seeded with a default
+//! 5-room topology on first creation.
 
 use std::cell::RefCell;
 
@@ -17,15 +18,43 @@ thread_local! {
     static CORE: RefCell<Option<WorkbenchCore>> = RefCell::new(None);
 }
 
-/// Initialize the core if needed. Panics on init failure (WASM has no recovery).
+/// Initialize the core if needed, seeding default topology on first creation.
+/// Panics on init failure (WASM has no recovery).
 fn ensure_core() {
     CORE.with(|cell| {
         if cell.borrow().is_none() {
-            let core = WorkbenchCore::open_in_memory("global")
+            let mut core = WorkbenchCore::open_in_memory("global")
                 .expect("Failed to initialize WorkbenchCore in WASM");
+            seed_topology(&mut core);
             *cell.borrow_mut() = Some(core);
         }
     });
+}
+
+/// Inject the default 5-room topology into a freshly-created core.
+///
+/// Topology:
+///   Entrance Hall ↔ Armory (bidirectional)
+///   Entrance Hall ↔ Library (bidirectional)
+///   Garden → Vault (one-way shortcut)
+fn seed_topology(core: &mut WorkbenchCore) {
+    // Create 5 rooms
+    core.create_node("entrance", "Entrance Hall").expect("seed: create entrance");
+    core.create_node("armory", "Armory").expect("seed: create armory");
+    core.create_node("library", "Library").expect("seed: create library");
+    core.create_node("garden", "Garden").expect("seed: create garden");
+    core.create_node("vault", "Vault").expect("seed: create vault");
+
+    // Bidirectional: entrance ↔ armory, entrance ↔ library
+    core.create_edge("entrance", "armory", true).expect("seed: edge entrance-armory");
+    core.create_edge("entrance", "library", true).expect("seed: edge entrance-library");
+
+    // One-way shortcut: garden → vault
+    core.create_edge("garden", "vault", false).expect("seed: edge garden-vault");
+
+    // Mark entrance as spawn, vault as shortcut
+    core.mark_node("entrance", "spawn").expect("seed: mark entrance");
+    core.mark_node("vault", "shortcut").expect("seed: mark vault");
 }
 
 // ── Public WASM exports ──────────────────────────────────────────────
@@ -86,6 +115,77 @@ pub fn execute_command(json_str: &str) -> JsValue {
             ),
         }
     })
+}
+
+/// Generate topology proposals from a natural language intent.
+///
+/// In WASM, we use a mock proposal generator (CLI is native-only, INV-4).
+/// Returns a JSON array of command objects ready for `execute_command`.
+///
+/// The mock generator parses keywords from the intent:
+/// - "branch" / "fork" → creates hub with branch nodes
+/// - "loop" / "circle" → creates a cycle
+/// - "shortcut" → creates a one-way shortcut edge
+/// - "secret" → creates a hidden room with one-way entrance
+/// - Otherwise → creates a simple linear chain
+#[wasm_bindgen]
+pub fn propose(intent: &str) -> JsValue {
+    ensure_core();
+    let commands = mock_propose(intent);
+    let json = serde_json::to_string(&commands).unwrap_or_else(|_| "[]".to_string());
+    JsValue::from_str(&json)
+}
+
+/// Build mock proposal commands from keyword-matched intent.
+fn mock_propose(intent: &str) -> Vec<serde_json::Value> {
+    let lower = intent.to_lowercase();
+    let mut cmds: Vec<serde_json::Value> = Vec::new();
+
+    if lower.contains("branch") || lower.contains("fork") || lower.contains("hub") {
+        // Hub with two branches
+        cmds.push(serde_json::json!({"CreateNode": {"node_id": "hub", "label": "Central Hub"}}));
+        cmds.push(serde_json::json!({"CreateNode": {"node_id": "branch_a", "label": "Branch A"}}));
+        cmds.push(serde_json::json!({"CreateNode": {"node_id": "branch_b", "label": "Branch B"}}));
+        cmds.push(serde_json::json!({"CreateEdge": {"from_node": "hub", "to_node": "branch_a", "bidirectional": true}}));
+        cmds.push(serde_json::json!({"CreateEdge": {"from_node": "hub", "to_node": "branch_b", "bidirectional": true}}));
+        cmds.push(serde_json::json!({"MarkNode": {"node_id": "hub", "mark": "spawn"}}));
+    } else if lower.contains("loop") || lower.contains("circle") || lower.contains("cycle") {
+        // Circular loop: a → b → c → a
+        cmds.push(serde_json::json!({"CreateNode": {"node_id": "loop_a", "label": "Loop A"}}));
+        cmds.push(serde_json::json!({"CreateNode": {"node_id": "loop_b", "label": "Loop B"}}));
+        cmds.push(serde_json::json!({"CreateNode": {"node_id": "loop_c", "label": "Loop C"}}));
+        cmds.push(serde_json::json!({"CreateEdge": {"from_node": "loop_a", "to_node": "loop_b", "bidirectional": true}}));
+        cmds.push(serde_json::json!({"CreateEdge": {"from_node": "loop_b", "to_node": "loop_c", "bidirectional": true}}));
+        cmds.push(serde_json::json!({"CreateEdge": {"from_node": "loop_c", "to_node": "loop_a", "bidirectional": true}}));
+        cmds.push(serde_json::json!({"MarkNode": {"node_id": "loop_a", "mark": "spawn"}}));
+    } else if lower.contains("shortcut") || lower.contains("skip") {
+        // Linear path with a shortcut
+        cmds.push(serde_json::json!({"CreateNode": {"node_id": "start", "label": "Start"}}));
+        cmds.push(serde_json::json!({"CreateNode": {"node_id": "mid", "label": "Midway"}}));
+        cmds.push(serde_json::json!({"CreateNode": {"node_id": "end", "label": "End"}}));
+        cmds.push(serde_json::json!({"CreateEdge": {"from_node": "start", "to_node": "mid", "bidirectional": true}}));
+        cmds.push(serde_json::json!({"CreateEdge": {"from_node": "mid", "to_node": "end", "bidirectional": true}}));
+        cmds.push(serde_json::json!({"CreateEdge": {"from_node": "start", "to_node": "end", "bidirectional": false}}));
+        cmds.push(serde_json::json!({"MarkNode": {"node_id": "start", "mark": "spawn"}}));
+        cmds.push(serde_json::json!({"MarkNode": {"node_id": "end", "mark": "shortcut"}}));
+    } else if lower.contains("secret") || lower.contains("hidden") {
+        // Hidden room accessible via one-way
+        cmds.push(serde_json::json!({"CreateNode": {"node_id": "main", "label": "Main Hall"}}));
+        cmds.push(serde_json::json!({"CreateNode": {"node_id": "secret_room", "label": "Secret Room"}}));
+        cmds.push(serde_json::json!({"CreateEdge": {"from_node": "main", "to_node": "secret_room", "bidirectional": false}}));
+        cmds.push(serde_json::json!({"MarkNode": {"node_id": "main", "mark": "spawn"}}));
+        cmds.push(serde_json::json!({"MarkNode": {"node_id": "secret_room", "mark": "treasure"}}));
+    } else {
+        // Default: simple linear chain of 3 rooms
+        cmds.push(serde_json::json!({"CreateNode": {"node_id": "room_1", "label": "Room 1"}}));
+        cmds.push(serde_json::json!({"CreateNode": {"node_id": "room_2", "label": "Room 2"}}));
+        cmds.push(serde_json::json!({"CreateNode": {"node_id": "room_3", "label": "Room 3"}}));
+        cmds.push(serde_json::json!({"CreateEdge": {"from_node": "room_1", "to_node": "room_2", "bidirectional": true}}));
+        cmds.push(serde_json::json!({"CreateEdge": {"from_node": "room_2", "to_node": "room_3", "bidirectional": true}}));
+        cmds.push(serde_json::json!({"MarkNode": {"node_id": "room_1", "mark": "spawn"}}));
+    }
+
+    cmds
 }
 
 // ── Command JSON parser (externally-tagged) ──────────────────────────

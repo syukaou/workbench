@@ -22,11 +22,27 @@ export function execute_command(json_str: string): any;
  */
 export function get_state(): any;
 
+/**
+ * Generate topology proposals from a natural language intent.
+ *
+ * In WASM, we use a mock proposal generator (CLI is native-only, INV-4).
+ * Returns a JSON array of command objects ready for `execute_command`.
+ *
+ * The mock generator parses keywords from the intent:
+ * - "branch" / "fork" → creates hub with branch nodes
+ * - "loop" / "circle" → creates a cycle
+ * - "shortcut" → creates a one-way shortcut edge
+ * - "secret" → creates a hidden room with one-way entrance
+ * - Otherwise → creates a simple linear chain
+ */
+export function propose(intent: string): any;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly execute_command: (a: number, b: number) => any;
+    readonly propose: (a: number, b: number) => any;
     readonly get_state: () => any;
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
