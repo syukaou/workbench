@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::engine::{Command, Engine};
 use crate::error::Result;
 use crate::event::Event;
-use crate::log::EventStore;
+use crate::EventStore;
 
 /// The single typed contract boundary for the core (INV-6).
 ///

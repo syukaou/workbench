@@ -7,11 +7,28 @@
 
 pub mod error;
 pub mod event;
-pub mod log;
 pub mod projection;
 pub mod engine;
 pub mod contract;
+
+// Event store: SQLite when native, in-memory Vec when WASM.
+#[cfg(feature = "native")]
+pub mod log;
+#[cfg(feature = "native")]
+pub use log::EventStore;
+
+#[cfg(not(feature = "native"))]
+pub mod memory_store;
+#[cfg(not(feature = "native"))]
+pub use memory_store::MemoryStore as EventStore;
+
+// CLI bridge: only available on native (uses std::process).
+#[cfg(feature = "native")]
 pub mod cli_bridge;
+
+// WASM IPC: only available on wasm32 target.
+#[cfg(target_arch = "wasm32")]
+pub mod wasm;
 
 // Re-export the public API.
 pub use contract::WorkbenchCore;
