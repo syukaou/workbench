@@ -1,14 +1,20 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+//! workbench-core: Deterministic event-log core.
+//!
+//! This crate provides the single source of truth for all design state.
+//! All mutations flow through Command → validate → serial append to an
+//! append-only typed event log. State is derived by folding events.
+//! The core crate has zero LLM/HTTP/rendering dependencies (INV-4/7).
+
+pub mod error;
+pub mod event;
+pub mod log;
+pub mod engine;
+pub mod contract;
+
+// Re-export the public API.
+pub use contract::WorkbenchCore;
+pub use error::{Error, Result};
+pub use event::{Event, EventType};
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+mod invariant_tests;
