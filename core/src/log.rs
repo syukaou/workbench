@@ -180,6 +180,15 @@ impl EventStore {
         )?;
         Ok(count as u64)
     }
+
+    /// Clear all events from the store (used for snapshot import).
+    ///
+    /// WARNING: This deletes all events. Intended only for snapshot import
+    /// where the events are immediately replaced.
+    pub fn clear(&self) -> Result<()> {
+        self.conn.execute("DELETE FROM events", [])?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

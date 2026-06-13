@@ -15,12 +15,31 @@
 export function execute_command(json_str: string): any;
 
 /**
+ * Export a full project snapshot as JSON (events + state).
+ *
+ * Returns a JSON object:
+ * ```json
+ * {"version": 1, "events": [...], "state": {...}}
+ * ```
+ * The frontend can save this as a `.workbench.json` file.
+ */
+export function export_snapshot(): any;
+
+/**
  * Get the current materialized state as a JSON string.
  *
  * Returns a JSON object mapping namespace-prefixed keys to values.
  * The state is derived by folding all events in the in-memory log.
  */
 export function get_state(): any;
+
+/**
+ * Import a project snapshot, replacing the current state.
+ *
+ * The JSON must contain an `events` array of serialized events.
+ * Returns `{"ok": true}` on success, or `{"ok": false, "error": "..."}` on failure.
+ */
+export function import_snapshot(json_str: string): any;
 
 /**
  * Generate topology proposals from a natural language intent.
@@ -42,7 +61,9 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly execute_command: (a: number, b: number) => any;
+    readonly import_snapshot: (a: number, b: number) => any;
     readonly propose: (a: number, b: number) => any;
+    readonly export_snapshot: () => any;
     readonly get_state: () => any;
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;

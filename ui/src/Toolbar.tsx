@@ -18,6 +18,10 @@ interface Props {
   onRejectAll: () => void;
   onAcceptSingle: (cmd: Record<string, unknown>) => void;
   onRejectSingle: (cmd: Record<string, unknown>) => void;
+  // v1.4: Save/Load
+  onSave: () => void;
+  onLoad: () => void;
+  coreReady: boolean;
 }
 
 let nodeCounter = 0;
@@ -45,7 +49,7 @@ function describeCommand(cmd: Record<string, unknown>): string {
 export default function Toolbar({
   state, onStateChange, canUndo, canRedo, onUndo, onRedo, mode, onSetMode,
   proposals, proposalLoading, onPropose, onAcceptAll, onRejectAll,
-  onAcceptSingle, onRejectSingle,
+  onAcceptSingle, onRejectSingle, onSave, onLoad, coreReady,
 }: Props) {
   const [intentText, setIntentText] = useState('');
   const [showProposals, setShowProposals] = useState(false);
@@ -113,6 +117,21 @@ export default function Toolbar({
           </button>
           <button title="Redo last undone action" onClick={onRedo} disabled={!canRedo}>
             ↷ Redo
+          </button>
+          <span className="toolbar-separator" />
+          <button
+            title="Save project (.workbench.json)"
+            onClick={onSave}
+            disabled={!coreReady}
+          >
+            💾 Save
+          </button>
+          <button
+            title="Load project (.workbench.json)"
+            onClick={onLoad}
+            disabled={!coreReady}
+          >
+            📂 Load
           </button>
           <span className="toolbar-separator" />
           <span className="toolbar-info">

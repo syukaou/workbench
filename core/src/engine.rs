@@ -262,6 +262,21 @@ impl Engine {
         Ok(redone)
     }
 
+    /// Import events from a snapshot, replacing the current store contents.
+    ///
+    /// Clears the existing event log, appends the given events, and rebuilds
+    /// the projection to the latest sequence. Used for project save/load (v1.4).
+    pub fn import_events(&mut self, events: &[Event]) -> Result<()> {
+        self.store.clear()?;
+        for event in events {
+            self.store.append(event)?;
+        }
+        let total = self.store.event_count(&self.aggregate_id)?;
+        self.state = fold_projection(&self.store, &self.aggregate_id, total)?;
+        self.current_seq = total;
+        Ok(())
+    }
+
     /// Get the full event history for this aggregate.
     pub fn history(&self) -> Result<Vec<Event>> {
         self.store.get_all(&self.aggregate_id)

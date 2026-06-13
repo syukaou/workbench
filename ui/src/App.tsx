@@ -10,6 +10,8 @@ import {
   requestProposal,
   getEntityState,
   executeCoreCommand,
+  buildProjectSave,
+  loadProject,
 } from './mockData';
 import type { GraphState, EntityState } from './types';
 import './App.css';
@@ -347,6 +349,53 @@ export default function App() {
     setProposals((prev) => prev?.filter((c) => c !== cmd) ?? null);
   }, []);
 
+  // ── v1.4: Save/Load ──────────────────────────────────────────────
+
+  const handleSave = useCallback(() => {
+    try {
+      const json = buildProjectSave();
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'project.workbench.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.warn('Save failed:', err);
+    }
+  }, []);
+
+  const handleLoad = useCallback(() => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,.workbench.json';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const newState = await loadProject(text);
+        // Reset undo/redo stacks
+        undoStackRef.current = [];
+        redoStackRef.current = [];
+        setCanUndo(false);
+        setCanRedo(false);
+        setState(newState);
+        // Refresh entity state
+        if (coreReady) {
+          const es = getEntityState();
+          setEntityState(es);
+        }
+      } catch (err) {
+        console.warn('Load failed:', err);
+      }
+    };
+    input.click();
+  }, [coreReady]);
+
   // ── Loading state ─────────────────────────────────────────────────
 
   if (!state) {
@@ -385,6 +434,9 @@ export default function App() {
         onRejectAll={handleRejectProposals}
         onAcceptSingle={handleAcceptSingle}
         onRejectSingle={handleRejectSingle}
+        onSave={handleSave}
+        onLoad={handleLoad}
+        coreReady={coreReady}
       />
       <div className="main-area">
         <TopologyGraph

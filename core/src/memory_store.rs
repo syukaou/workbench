@@ -84,6 +84,12 @@ impl MemoryStore {
             .count() as u64)
     }
 
+    /// Clear all events from the store (used for snapshot import).
+    pub fn clear(&self) -> Result<()> {
+        self.events.borrow_mut().clear();
+        Ok(())
+    }
+
     /// Get the next sequence number for an aggregate.
     pub fn next_seq(&self, aggregate_id: &str) -> Result<u64> {
         let events = self.events.borrow();

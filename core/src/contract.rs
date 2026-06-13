@@ -226,4 +226,22 @@ impl WorkbenchCore {
     pub fn rebuild_up_to(&self, seq: u64) -> Result<HashMap<String, serde_json::Value>> {
         self.engine.rebuild_up_to(seq)
     }
+
+    // ── v1.4: Save/Load persistence ─────────────────────────────────
+
+    /// Export a full project snapshot: all events + materialized state.
+    pub fn export_snapshot(&self) -> Result<serde_json::Value> {
+        let events = self.engine.history()?;
+        let state = self.engine.state().clone();
+        Ok(serde_json::json!({
+            "version": 1,
+            "events": events,
+            "state": state,
+        }))
+    }
+
+    /// Import a project snapshot, replacing the current state entirely.
+    pub fn import_snapshot(&mut self, events: &[Event]) -> Result<()> {
+        self.engine.import_events(events)
+    }
 }

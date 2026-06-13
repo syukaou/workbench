@@ -10,6 +10,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::contract::WorkbenchCore;
 use crate::engine::Command;
+use crate::event::Event;
 
 // ── Global core instance ─────────────────────────────────────────────
 
@@ -122,6 +123,78 @@ pub fn execute_command(json_str: &str) -> JsValue {
         let c = core.as_mut().unwrap();
         match c.execute_command(command) {
             Ok(event) => JsValue::from_str(&format!(r#"{{"ok":true,"seq":{}}}"#, event.seq)),
+            Err(e) => JsValue::from_str(&format!(r#"{{"ok":false,"error":"{}"}}"#, e)),
+        }
+    })
+}
+
+/// Export a full project snapshot as JSON (events + state).
+///
+/// Returns a JSON object:
+/// ```json
+/// {"version": 1, "events": [...], "state": {...}}
+/// ```
+/// The frontend can save this as a `.workbench.json` file.
+#[wasm_bindgen]
+pub fn export_snapshot() -> JsValue {
+    ensure_core();
+    CORE.with(|cell| {
+        let core = cell.borrow();
+        let c = core.as_ref().unwrap();
+        match c.export_snapshot() {
+            Ok(snapshot) => JsValue::from_str(&snapshot.to_string()),
+            Err(e) => JsValue::from_str(&format!(r#"{{"ok":false,"error":"{}"}}"#, e)),
+        }
+    })
+}
+
+/// Import a project snapshot, replacing the current state.
+///
+/// The JSON must contain an `events` array of serialized events.
+/// Returns `{"ok": true}` on success, or `{"ok": false, "error": "..."}` on failure.
+#[wasm_bindgen]
+pub fn import_snapshot(json_str: &str) -> JsValue {
+    ensure_core();
+
+    // Parse the top-level JSON
+    let snapshot: serde_json::Value = match serde_json::from_str(json_str) {
+        Ok(v) => v,
+        Err(e) => {
+            return JsValue::from_str(&format!(
+                r#"{{"ok":false,"error":"Invalid JSON: {}"}}"#,
+                e
+            ));
+        }
+    };
+
+    // Extract events array
+    let events_arr = match snapshot.get("events").and_then(|v| v.as_array()) {
+        Some(arr) => arr,
+        None => {
+            return JsValue::from_str(r#"{"ok":false,"error":"Missing 'events' array in snapshot"}"#);
+        }
+    };
+
+    // Deserialize each event
+    let events: Vec<Event> = match events_arr
+        .iter()
+        .map(|v| serde_json::from_value(v.clone()))
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(evts) => evts,
+        Err(e) => {
+            return JsValue::from_str(&format!(
+                r#"{{"ok":false,"error":"Invalid event in snapshot: {}"}}"#,
+                e
+            ));
+        }
+    };
+
+    CORE.with(|cell| {
+        let mut core = cell.borrow_mut();
+        let c = core.as_mut().unwrap();
+        match c.import_snapshot(&events) {
+            Ok(()) => JsValue::from_str(r#"{"ok":true}"#),
             Err(e) => JsValue::from_str(&format!(r#"{{"ok":false,"error":"{}"}}"#, e)),
         }
     })

@@ -21,6 +21,21 @@ export function execute_command(json_str) {
 }
 
 /**
+ * Export a full project snapshot as JSON (events + state).
+ *
+ * Returns a JSON object:
+ * ```json
+ * {"version": 1, "events": [...], "state": {...}}
+ * ```
+ * The frontend can save this as a `.workbench.json` file.
+ * @returns {any}
+ */
+export function export_snapshot() {
+    const ret = wasm.export_snapshot();
+    return ret;
+}
+
+/**
  * Get the current materialized state as a JSON string.
  *
  * Returns a JSON object mapping namespace-prefixed keys to values.
@@ -29,6 +44,21 @@ export function execute_command(json_str) {
  */
 export function get_state() {
     const ret = wasm.get_state();
+    return ret;
+}
+
+/**
+ * Import a project snapshot, replacing the current state.
+ *
+ * The JSON must contain an `events` array of serialized events.
+ * Returns `{"ok": true}` on success, or `{"ok": false, "error": "..."}` on failure.
+ * @param {string} json_str
+ * @returns {any}
+ */
+export function import_snapshot(json_str) {
+    const ptr0 = passStringToWasm0(json_str, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.import_snapshot(ptr0, len0);
     return ret;
 }
 

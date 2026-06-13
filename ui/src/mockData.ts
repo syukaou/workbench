@@ -5,7 +5,7 @@
  * UI positions (x, y) are managed locally in React state.
  */
 import type { GraphState, RoomNode, EdgeDef, EntityState, EntityTypeInfo, EntityInstanceInfo } from './types';
-import { ensureCore, getCoreState, executeCoreCommand, proposeViaCore } from './coreBridge';
+import { ensureCore, getCoreState, executeCoreCommand, proposeViaCore, exportCoreSnapshot, importCoreSnapshot } from './coreBridge';
 
 // Re-export executeCoreCommand for direct use by App
 export { executeCoreCommand };
@@ -258,6 +258,66 @@ function mockProposeLocal(intent: string): Record<string, unknown>[] {
     cmds.push({ MarkNode: { node_id: 'room_1', mark: 'spawn' } });
   }
   return cmds;
+}
+
+// ── v1.4: Save/Load persistence ──────────────────────────────────────
+
+/** Export all cached positions as a plain object. */
+export function exportPositions(): Record<string, { x: number; y: number }> {
+  const obj: Record<string, { x: number; y: number }> = {};
+  positionCache.forEach((pos, nodeId) => {
+    obj[nodeId] = { ...pos };
+  });
+  return obj;
+}
+
+/** Import positions from a plain object into the cache. */
+export function importPositions(data: Record<string, { x: number; y: number }>): void {
+  positionCache.clear();
+  for (const [nodeId, pos] of Object.entries(data)) {
+    positionCache.set(nodeId, { x: pos.x, y: pos.y });
+  }
+  // Reset auto-position counters so new nodes don't overlap imported ones
+  nextAutoX = 300;
+  nextAutoY = 200;
+}
+
+/** Build a full project save file: core snapshot + UI positions. */
+export function buildProjectSave(): string {
+  const coreSnapshot = JSON.parse(exportCoreSnapshot());
+  const positions = exportPositions();
+  const project = {
+    ...coreSnapshot,
+    positions,
+    savedAt: new Date().toISOString(),
+  };
+  return JSON.stringify(project, null, 2);
+}
+
+/** Restore a project from a save file. Returns the new GraphState. */
+export async function loadProject(jsonStr: string): Promise<GraphState> {
+  const project = JSON.parse(jsonStr);
+
+  // Restore positions first
+  if (project.positions && typeof project.positions === 'object') {
+    importPositions(project.positions as Record<string, { x: number; y: number }>);
+  }
+
+  // Strip extra fields before passing to core (core only needs version + events + state)
+  const corePayload = JSON.stringify({
+    version: project.version,
+    events: project.events,
+    state: project.state,
+  });
+
+  const result = importCoreSnapshot(corePayload);
+  if (!result.ok) {
+    throw new Error(`Import failed: ${result.error}`);
+  }
+
+  // Re-read state from core
+  const coreState = getCoreState();
+  return coreStateToGraphState(coreState);
 }
 
 // ── Fallback mock (for when WASM is unavailable) ─────────────────────
