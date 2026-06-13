@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import TopologyGraph from './TopologyGraph';
+import Preview3D from './Preview3D';
 import Toolbar from './Toolbar';
 import PoiEditor from './PoiEditor';
 import {
@@ -20,6 +21,7 @@ export default function App() {
   const [state, setState] = useState<GraphState | null>(null);
   const [coreReady, setCoreReady] = useState(false);
   const [mode, setMode] = useState<'select' | 'add_edge'>('select');
+  const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d');
   const undoStackRef = useRef<GraphState[]>([]);
   const redoStackRef = useRef<GraphState[]>([]);
   const [canUndo, setCanUndo] = useState(false);
