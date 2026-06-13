@@ -1,0 +1,99 @@
+/* App layout: toolbar on top, graph fills remaining space */
+.app {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+/* ── Toolbar ────────────────────────────────────────────────────── */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: #1e293b;
+  border-bottom: 1px solid #334155;
+  flex-shrink: 0;
+  min-height: 48px;
+}
+
+.toolbar-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #f8fafc;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.toolbar-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.toolbar-buttons button {
+  padding: 5px 12px;
+  font-size: 12px;
+  border: 1px solid #475569;
+  border-radius: 6px;
+  background: #334155;
+  color: #e2e8f0;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.toolbar-buttons button:hover:not(:disabled) {
+  background: #475569;
+}
+
+.toolbar-buttons button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.toolbar-buttons button.active {
+  border-color: #3b82f6;
+  background: #1e3a5f;
+  color: #93c5fd;
+}
+
+.toolbar-separator {
+  width: 1px;
+  height: 20px;
+  background: #475569;
+  margin: 0 4px;
+}
+
+.toolbar-info {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-left: auto;
+}
+
+/* ── Topology Graph ─────────────────────────────────────────────── */
+.topology-graph {
+  flex: 1;
+}
+
+/* Node styling: show marks and POI count */
+.react-flow__node-default {
+  background: #1e293b;
+  border: 2px solid #475569;
+  border-radius: 8px;
+  color: #e2e8f0;
+  font-size: 12px;
+  padding: 8px 16px;
+  min-width: 120px;
+  text-align: center;
+}
+
+.react-flow__node-default.selected {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 1px #3b82f6;
+}
