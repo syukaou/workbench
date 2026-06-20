@@ -1006,3 +1006,90 @@ fn inv8_no_event_triggers_event() {
         }
     }
 }
+
+// ── INV-5 / INV-6: Save / Load goes through the event log ────────────
+//
+// U4R: project save/load must NOT smuggle in a second source of truth. Save
+// exports the event log (export_snapshot), load replays those events through
+// import_snapshot — the projection is rebuilt by folding the log, never copied
+// in wholesale. This pins three things: (1) the saved `state` field is exactly
+// fold(events) so a viewer can trust it, (2) loading into a fresh core via the
+// serialized events reproduces the identical state, and (3) the imported log is
+// live history — undo still walks it. The UI coordinate layer is intentionally
+// absent here: it is view-only and never enters the event log.
+
+#[test]
+fn inv5_inv6_save_load_roundtrips_through_event_log() {
+    let mut core = WorkbenchCore::open_in_memory("global").unwrap();
+
+    // Build a non-trivial project: nodes, an edge, a mark, a POI.
+    core.create_node("entrance", "Entrance").unwrap();
+    core.create_node("vault", "Vault").unwrap();
+    core.create_edge("entrance", "vault", false).unwrap();
+    core.mark_node("entrance", "spawn").unwrap();
+    core.attach_poi("vault", "locked-chest", None).unwrap();
+
+    let saved_state = core.get_state();
+    let saved_events = core.get_history().unwrap();
+
+    // ── Save: export_snapshot is the sole serialized form ────────────
+    let snapshot = core.export_snapshot().unwrap();
+    // The materialized `state` in the file must equal fold(events): a consumer
+    // reading the snapshot's state is reading the projection, not a side copy.
+    assert_eq!(
+        snapshot["state"],
+        serde_json::to_value(&saved_state).unwrap(),
+        "INV-5 VIOLATION: snapshot.state diverged from the materialized state"
+    );
+    assert_eq!(
+        snapshot["events"].as_array().unwrap().len(),
+        saved_events.len(),
+        "snapshot must carry every event in the log"
+    );
+
+    // ── Load: a fresh core rebuilds purely by replaying the events ───
+    // Round-trip the events through JSON exactly as the file on disk would,
+    // so this exercises the real save→file→load deserialization path.
+    let events: Vec<crate::Event> =
+        serde_json::from_value(snapshot["events"].clone()).unwrap();
+    let mut loaded = WorkbenchCore::open_in_memory("global").unwrap();
+    loaded.import_snapshot(&events).unwrap();
+
+    // State after load == saved state, and it equals fold(events) in the new
+    // core — load did not bypass the log (INV-5/INV-6).
+    assert_eq!(
+        loaded.get_state(),
+        saved_state,
+        "INV-6 VIOLATION: loaded state != saved state"
+    );
+    assert_eq!(
+        loaded.get_state(),
+        loaded.rebuild().unwrap(),
+        "INV-5 VIOLATION: loaded state must equal rebuild(events) in the new core"
+    );
+    assert_eq!(
+        loaded.get_history().unwrap(),
+        saved_events,
+        "load must preserve the event log verbatim (append-only, INV-5)"
+    );
+
+    // ── The imported log is live history: undo still walks it ────────
+    // import places the cursor at the tip; undo of the last event (AttachPOI)
+    // detaches the POI, proving the load did not freeze a flat snapshot.
+    assert_eq!(
+        loaded.get_current_seq(),
+        loaded.get_total_events().unwrap(),
+        "import must leave the undo cursor at the tip of the imported log"
+    );
+    loaded.undo(1).unwrap();
+    assert_eq!(
+        loaded.get_state()["node:vault"]["pois"],
+        serde_json::json!([]),
+        "INV-5 VIOLATION: undo on the imported log must reverse the last event"
+    );
+    assert_eq!(
+        loaded.get_state(),
+        loaded.rebuild_up_to(loaded.get_current_seq()).unwrap(),
+        "INV-5: state after undo must equal rebuild up to the cursor"
+    );
+}
