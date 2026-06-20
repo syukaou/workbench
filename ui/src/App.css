@@ -383,6 +383,15 @@
   box-shadow: 0 0 0 1px var(--wb-state-selected-border);
 }
 
+/* Pending = not-yet-committed (AI proposal overlay, wired in U2R): dashed +
+   weakened, distinct from the solid committed card (DESIGN §2 three states). */
+.poi-node.pending {
+  background: var(--wb-state-pending-bg);
+  border-style: dashed;
+  border-color: var(--wb-state-pending-border);
+  opacity: var(--wb-state-pending-opacity);
+}
+
 .poi-node-label {
   font-weight: var(--wb-fw-semibold);
   font-size: var(--wb-fs-base);
