@@ -12,6 +12,8 @@ export interface RoomNode {
   y: number;
   marks: string[];
   pois: POI[];
+  /** Render-only: AI proposal not yet accepted (INV-3). Never part of core truth. */
+  pending?: boolean;
 }
 
 export interface EdgeDef {
@@ -19,6 +21,8 @@ export interface EdgeDef {
   to_node: string;
   bidirectional: boolean;
   label?: string;
+  /** Render-only: AI proposal not yet accepted (INV-3). Never part of core truth. */
+  pending?: boolean;
 }
 
 export interface GraphState {

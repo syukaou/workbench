@@ -5,6 +5,8 @@ interface PoiNodeData {
   label: string;
   marks: string[];
   pois: POI[];
+  /** AI proposal not yet accepted — rendered dashed + weakened (INV-3). */
+  pending?: boolean;
 }
 
 /** Derive a compact label from POI ids (e.g. "Boss", "Item×2"). */
@@ -30,11 +32,11 @@ function derivePoiLabel(pois: POI[]): string | null {
 }
 
 export default function PoiNode({ data, selected }: NodeProps<PoiNodeData>) {
-  const { label, marks, pois } = data;
+  const { label, marks, pois, pending } = data;
   const badgeLabel = derivePoiLabel(pois);
 
   return (
-    <div className={`poi-node ${selected ? 'selected' : ''}`}>
+    <div className={`poi-node ${pending ? 'pending' : ''} ${selected ? 'selected' : ''}`}>
       <Handle type="target" position={Position.Top} />
       <div className="poi-node-label">{label}</div>
       {marks.length > 0 && (

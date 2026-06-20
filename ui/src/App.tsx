@@ -1,5 +1,6 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import TopologyGraph from './TopologyGraph';
+import { proposalsToOverlay } from './proposalOverlay';
 import Preview3D from './Preview3D';
 import Toolbar from './Toolbar';
 import PoiEditor from './PoiEditor';
@@ -468,6 +469,15 @@ export default function App() {
 
   const selectedNode = selectedNodeId ? state.rooms.find((r) => r.node_id === selectedNodeId) ?? null : null;
 
+  // ── AI proposal overlay (INV-3) ───────────────────────────────────
+  // Held proposals are previewed on the canvas as pending (dashed/weakened)
+  // nodes/edges, derived at render time. This NEVER writes core — accepting a
+  // proposal is what dispatches its commands through the core (one event each).
+  const proposalOverlay = useMemo(
+    () => proposalsToOverlay(proposals ?? [], state),
+    [proposals, state],
+  );
+
   // ── Render ────────────────────────────────────────────────────────
 
   return (
@@ -504,6 +514,7 @@ export default function App() {
             onRemoveEdge={handleRemoveEdge}
             onMarkNode={handleMarkNode}
             onNodeSelect={handleNodeSelect}
+            overlay={proposalOverlay}
           />
         ) : (
           <Preview3D state={state} />
