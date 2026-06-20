@@ -1,0 +1,75 @@
+<!-- @dsCard group="AI" -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI proposal panel — typed diff · accept/reject (INV-3)</title>
+  <link rel="stylesheet" href="tokens.css" />
+  <style>
+    body { margin: 0; padding: 24px; background: var(--wb-bg-base); color: var(--wb-text);
+           font-family: var(--wb-font-sans); font-size: var(--wb-fs-base); }
+    h2 { font-size: var(--wb-fs-lg); font-weight: 600; margin: 0 0 4px; }
+    .sub { color: var(--wb-text-secondary); margin: 0 0 20px; }
+
+    .panel { background: var(--wb-bg-panel); border: 1px solid var(--wb-border);
+             border-radius: var(--wb-radius-lg); overflow: hidden; max-width: 560px; box-shadow: var(--wb-shadow-2); }
+    .panel .bar { display: flex; gap: 8px; padding: 10px; border-bottom: 1px solid var(--wb-border); }
+    .panel .intent { flex: 1; font: inherit; font-size: var(--wb-fs-base); color: var(--wb-text);
+                     background: var(--wb-bg-inset); border: 1px solid var(--wb-border);
+                     border-radius: var(--wb-radius); padding: 7px 10px; outline: none; }
+    .btn { font: inherit; font-weight: 500; font-size: var(--wb-fs-base); padding: 6px 12px;
+           border-radius: var(--wb-radius); border: 1px solid transparent; cursor: pointer; }
+    .btn.primary { background: var(--wb-accent); color: var(--wb-text-on-accent); }
+    .btn.ghost { background: transparent; color: var(--wb-text-secondary); border-color: var(--wb-border); }
+    .btn.sm { padding: 3px 9px; font-size: var(--wb-fs-sm); }
+    .btn.ok { background: var(--wb-success-soft); color: var(--wb-success); border-color: transparent; }
+    .btn.no { background: var(--wb-error-soft); color: var(--wb-error); border-color: transparent; }
+
+    .head { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px;
+            font-size: var(--wb-fs-sm); color: var(--wb-text-secondary); }
+    .pending-tag { font-family: var(--wb-font-mono); font-size: var(--wb-fs-xs);
+                   color: var(--wb-accent); background: var(--wb-accent-soft);
+                   border: 1px dashed var(--wb-accent); border-radius: 999px; padding: 1px 8px; }
+
+    .diff { list-style: none; margin: 0; padding: 0 8px 8px; }
+    .diff li { display: flex; align-items: center; gap: 8px; padding: 6px 8px; margin: 4px 0;
+               font-family: var(--wb-font-mono); font-size: var(--wb-fs-sm);
+               background: var(--wb-state-pending-bg); border: 1px dashed var(--wb-state-pending-border);
+               border-radius: var(--wb-radius); }
+    .diff .op { color: var(--wb-success); }
+    .diff .body { flex: 1; color: var(--wb-text); }
+    .diff .actions { display: flex; gap: 6px; }
+    .foot { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--wb-border); }
+  </style>
+</head>
+<body>
+  <h2>AI proposal — typed, reviewed, not yet committed</h2>
+  <p class="sub">INV-3: AI output is a typed proposal. Shown dashed/weak; the core state does NOT change until you accept.</p>
+
+  <div class="panel">
+    <div class="bar">
+      <input class="intent" value="中央大厅 + 三支线 + 一条单向捷径" />
+      <button class="btn primary">Propose</button>
+    </div>
+
+    <div class="head">
+      <span>5 changes proposed</span>
+      <span class="pending-tag">pending · 未落盘</span>
+    </div>
+
+    <ul class="diff">
+      <li><span class="op">+ node</span><span class="body">central_hall "中央大厅"</span><span class="actions"><button class="btn ok sm">✓</button><button class="btn no sm">✕</button></span></li>
+      <li><span class="op">+ node</span><span class="body">armory "Armory"</span><span class="actions"><button class="btn ok sm">✓</button><button class="btn no sm">✕</button></span></li>
+      <li><span class="op">+ edge</span><span class="body">central_hall ↔ armory</span><span class="actions"><button class="btn ok sm">✓</button><button class="btn no sm">✕</button></span></li>
+      <li><span class="op">+ edge</span><span class="body">armory → vault &nbsp;(one-way)</span><span class="actions"><button class="btn ok sm">✓</button><button class="btn no sm">✕</button></span></li>
+      <li><span class="op">+ mark</span><span class="body">central_hall : spawn</span><span class="actions"><button class="btn ok sm">✓</button><button class="btn no sm">✕</button></span></li>
+    </ul>
+
+    <div class="foot">
+      <button class="btn primary">Accept all</button>
+      <button class="btn ghost">Reject all</button>
+    </div>
+  </div>
+</body>
+</html>

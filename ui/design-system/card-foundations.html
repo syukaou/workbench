@@ -1,0 +1,85 @@
+<!-- @dsCard group="Foundations" -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Foundations — color · type · spacing</title>
+  <link rel="stylesheet" href="tokens.css" />
+  <style>
+    body { margin: 0; padding: 24px; background: var(--wb-bg-base); color: var(--wb-text);
+           font-family: var(--wb-font-sans); font-size: var(--wb-fs-base); }
+    h2 { font-size: var(--wb-fs-lg); font-weight: var(--wb-fw-semibold); margin: 0 0 4px; }
+    .sub { color: var(--wb-text-secondary); margin: 0 0 20px; }
+    section { margin-bottom: 28px; }
+    .label { font-size: var(--wb-fs-xs); text-transform: uppercase; letter-spacing: .06em;
+             color: var(--wb-text-muted); margin-bottom: 10px; }
+    .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+    .sw { border-radius: var(--wb-radius); overflow: hidden; border: 1px solid var(--wb-border); }
+    .sw .chip { height: 48px; }
+    .sw .meta { padding: 6px 8px; background: var(--wb-bg-card); }
+    .sw .name { font-size: var(--wb-fs-sm); }
+    .sw .val { font-family: var(--wb-font-mono); font-size: var(--wb-fs-xs); color: var(--wb-text-muted); }
+    .type-row { display: flex; align-items: baseline; gap: 14px; padding: 6px 0;
+                border-bottom: 1px solid var(--wb-border); }
+    .type-row .tag { font-family: var(--wb-font-mono); font-size: var(--wb-fs-xs);
+                     color: var(--wb-text-muted); width: 130px; flex: none; }
+    .mono { font-family: var(--wb-font-mono); }
+    .space-row { display: flex; align-items: center; gap: 12px; margin: 6px 0; }
+    .space-bar { height: 12px; background: var(--wb-accent); border-radius: 2px; }
+    .radii { display: flex; gap: 14px; }
+    .radii .box { width: 64px; height: 48px; background: var(--wb-bg-card);
+                  border: 1px solid var(--wb-border-strong); display: grid; place-items: center;
+                  font-family: var(--wb-font-mono); font-size: var(--wb-fs-xs); color: var(--wb-text-secondary); }
+  </style>
+</head>
+<body>
+  <h2>Foundations</h2>
+  <p class="sub">Dark · cool-neutral · professional-tool. One token source for panels (shadcn) and canvas (React Flow).</p>
+
+  <section>
+    <div class="label">Background scale (layer by step, not borders)</div>
+    <div class="swatches">
+      <div class="sw"><div class="chip" style="background:var(--wb-bg-canvas)"></div><div class="meta"><div class="name">bg-canvas</div><div class="val">#0d1117</div></div></div>
+      <div class="sw"><div class="chip" style="background:var(--wb-bg-base)"></div><div class="meta"><div class="name">bg-base</div><div class="val">#11161d</div></div></div>
+      <div class="sw"><div class="chip" style="background:var(--wb-bg-panel)"></div><div class="meta"><div class="name">bg-panel</div><div class="val">#161c24</div></div></div>
+      <div class="sw"><div class="chip" style="background:var(--wb-bg-card)"></div><div class="meta"><div class="name">bg-card</div><div class="val">#1c232d</div></div></div>
+      <div class="sw"><div class="chip" style="background:var(--wb-bg-hover)"></div><div class="meta"><div class="name">bg-hover</div><div class="val">#232b36</div></div></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="label">Text · accent · semantic</div>
+    <div class="swatches">
+      <div class="sw"><div class="chip" style="background:var(--wb-text)"></div><div class="meta"><div class="name">text</div><div class="val">#e6edf3</div></div></div>
+      <div class="sw"><div class="chip" style="background:var(--wb-text-secondary)"></div><div class="meta"><div class="name">text-secondary</div><div class="val">#9aa7b4</div></div></div>
+      <div class="sw"><div class="chip" style="background:var(--wb-accent)"></div><div class="meta"><div class="name">accent</div><div class="val">#4493f8</div></div></div>
+      <div class="sw"><div class="chip" style="background:var(--wb-success)"></div><div class="meta"><div class="name">success</div><div class="val">#3fb950</div></div></div>
+      <div class="sw"><div class="chip" style="background:var(--wb-warning)"></div><div class="meta"><div class="name">warning</div><div class="val">#d29922</div></div></div>
+      <div class="sw"><div class="chip" style="background:var(--wb-error)"></div><div class="meta"><div class="name">error</div><div class="val">#f85149</div></div></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="label">Type — system sans for UI, mono for numbers/IDs</div>
+    <div class="type-row"><span class="tag">xl / 20</span><span style="font-size:var(--wb-fs-xl)">Central Hall</span></div>
+    <div class="type-row"><span class="tag">lg / 16 semibold</span><span style="font-size:var(--wb-fs-lg);font-weight:600">Level topology</span></div>
+    <div class="type-row"><span class="tag">base / 13</span><span style="font-size:var(--wb-fs-base)">Node label, panel body text</span></div>
+    <div class="type-row"><span class="tag">sm / 12 secondary</span><span style="font-size:var(--wb-fs-sm);color:var(--wb-text-secondary)">Secondary / captions</span></div>
+    <div class="type-row"><span class="tag">mono / 12</span><span class="mono" style="font-size:var(--wb-fs-sm)">node:central · hp = 5000 · boss_1</span></div>
+  </section>
+
+  <section>
+    <div class="label">Spacing (4px base) &nbsp;·&nbsp; Radius</div>
+    <div class="space-row"><span class="mono" style="width:48px;color:var(--wb-text-muted)">1 · 4</span><span class="space-bar" style="width:4px"></span></div>
+    <div class="space-row"><span class="mono" style="width:48px;color:var(--wb-text-muted)">2 · 8</span><span class="space-bar" style="width:8px"></span></div>
+    <div class="space-row"><span class="mono" style="width:48px;color:var(--wb-text-muted)">4 · 16</span><span class="space-bar" style="width:16px"></span></div>
+    <div class="space-row"><span class="mono" style="width:48px;color:var(--wb-text-muted)">6 · 24</span><span class="space-bar" style="width:24px"></span></div>
+    <div class="radii" style="margin-top:14px">
+      <div class="box" style="border-radius:var(--wb-radius-sm)">sm·4</div>
+      <div class="box" style="border-radius:var(--wb-radius)">md·6</div>
+      <div class="box" style="border-radius:var(--wb-radius-lg)">lg·8</div>
+    </div>
+  </section>
+</body>
+</html>

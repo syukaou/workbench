@@ -1,0 +1,97 @@
+<!-- @dsCard group="Canvas" -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Canvas — node 3-state · edges</title>
+  <link rel="stylesheet" href="tokens.css" />
+  <style>
+    body { margin: 0; padding: 24px; background: var(--wb-bg-canvas); color: var(--wb-text);
+           font-family: var(--wb-font-sans); font-size: var(--wb-fs-base);
+           background-image: radial-gradient(var(--wb-border) 1px, transparent 1px);
+           background-size: 22px 22px; }
+    h2 { font-size: var(--wb-fs-lg); font-weight: 600; margin: 0 0 4px; }
+    .sub { color: var(--wb-text-secondary); margin: 0 0 22px; }
+    .row { display: flex; gap: 40px; align-items: flex-start; flex-wrap: wrap; }
+    .case { text-align: center; }
+    .case .cap { margin-top: 10px; font-size: var(--wb-fs-xs); text-transform: uppercase;
+                 letter-spacing: .06em; color: var(--wb-text-muted); }
+
+    /* Base room node (committed) */
+    .node { width: 168px; background: var(--wb-state-committed-bg);
+            border: 1px solid var(--wb-state-committed-border); border-radius: var(--wb-radius);
+            box-shadow: var(--wb-shadow-1); text-align: left; overflow: hidden; }
+    .node .hd { padding: 8px 10px; display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+    .node .label { font-weight: var(--wb-fw-medium); font-size: var(--wb-fs-md); }
+    .node .marks { display: flex; gap: 4px; padding: 0 10px 8px; }
+    .mark { font-size: var(--wb-fs-xs); font-family: var(--wb-font-mono); padding: 1px 6px;
+            border-radius: 999px; background: var(--wb-accent-soft); color: var(--wb-accent); }
+    .mark.spawn { background: var(--wb-success-soft); color: var(--wb-success); }
+    .mark.shortcut { background: var(--wb-warning-soft); color: var(--wb-warning); }
+    .poi-badge { font-size: var(--wb-fs-xs); font-family: var(--wb-font-mono);
+                 background: var(--wb-bg-hover); color: var(--wb-text-secondary);
+                 border-radius: 999px; padding: 1px 7px; }
+
+    /* Pending (AI 待接受, INV-3) — dashed + weakened, NOT yet committed */
+    .node.pending { border-style: dashed; border-color: var(--wb-state-pending-border);
+                    background: var(--wb-state-pending-bg); opacity: var(--wb-state-pending-opacity);
+                    box-shadow: none; }
+    /* Selected — accent ring */
+    .node.selected { border-color: var(--wb-state-selected-border);
+                     box-shadow: 0 0 0 3px var(--wb-state-selected-ring); }
+
+    /* Edges */
+    svg { display: block; }
+    .legend { display: flex; gap: 28px; margin-top: 26px; align-items: center; flex-wrap: wrap; }
+    .legend .item { display: flex; align-items: center; gap: 10px; font-size: var(--wb-fs-sm);
+                    color: var(--wb-text-secondary); }
+    .dash { stroke-dasharray: 5 4; }
+  </style>
+</head>
+<body>
+  <h2>Topology node — three states</h2>
+  <p class="sub">已落盘 (committed) · AI 待接受 (pending, INV-3 不入 core) · 选中 (selected). One token set, three reads.</p>
+
+  <div class="row">
+    <div class="case">
+      <div class="node">
+        <div class="hd"><span class="label">Central Hall</span><span class="poi-badge">2 POI</span></div>
+        <div class="marks"><span class="mark spawn">spawn</span></div>
+      </div>
+      <div class="cap">committed</div>
+    </div>
+
+    <div class="case">
+      <div class="node pending">
+        <div class="hd"><span class="label">Armory</span><span class="poi-badge">0 POI</span></div>
+        <div class="marks"><span class="mark">proposed</span></div>
+      </div>
+      <div class="cap">pending · 待接受</div>
+    </div>
+
+    <div class="case">
+      <div class="node selected">
+        <div class="hd"><span class="label">Dragon's Lair</span><span class="poi-badge">1 POI</span></div>
+        <div class="marks"><span class="mark shortcut">boss</span></div>
+      </div>
+      <div class="cap">selected</div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div class="item">
+      <svg width="80" height="16"><line x1="2" y1="8" x2="78" y2="8" stroke="var(--wb-edge-bi)" stroke-width="2"/><circle cx="6" cy="8" r="3" fill="var(--wb-edge-bi)"/><circle cx="74" cy="8" r="3" fill="var(--wb-edge-bi)"/></svg>
+      bidirectional
+    </div>
+    <div class="item">
+      <svg width="80" height="16"><line x1="2" y1="8" x2="70" y2="8" stroke="var(--wb-edge-uni)" stroke-width="2"/><polygon points="70,4 78,8 70,12" fill="var(--wb-edge-uni)"/></svg>
+      one-way · shortcut
+    </div>
+    <div class="item">
+      <svg width="80" height="16"><line class="dash" x1="2" y1="8" x2="70" y2="8" stroke="var(--wb-edge-pending)" stroke-width="2" opacity="0.6"/><polygon points="70,4 78,8 70,12" fill="var(--wb-edge-pending)" opacity="0.6"/></svg>
+      pending edge
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,80 @@
+<!-- @dsCard group="Surrounding tools" -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Surrounding tools — buttons · inputs (shadcn layer)</title>
+  <link rel="stylesheet" href="tokens.css" />
+  <style>
+    body { margin: 0; padding: 24px; background: var(--wb-bg-panel); color: var(--wb-text);
+           font-family: var(--wb-font-sans); font-size: var(--wb-fs-base); }
+    h2 { font-size: var(--wb-fs-lg); font-weight: 600; margin: 0 0 4px; }
+    .sub { color: var(--wb-text-secondary); margin: 0 0 22px; }
+    .label { font-size: var(--wb-fs-xs); text-transform: uppercase; letter-spacing: .06em;
+             color: var(--wb-text-muted); margin: 0 0 10px; }
+    section { margin-bottom: 24px; }
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+    .btn { font: inherit; font-weight: var(--wb-fw-medium); font-size: var(--wb-fs-base);
+           padding: 6px 12px; border-radius: var(--wb-radius); border: 1px solid transparent;
+           cursor: pointer; transition: background var(--wb-dur) var(--wb-ease); }
+    .btn.primary { background: var(--wb-accent); color: var(--wb-text-on-accent); }
+    .btn.primary:hover { background: var(--wb-accent-hover); }
+    .btn.secondary { background: var(--wb-bg-hover); color: var(--wb-text); border-color: var(--wb-border); }
+    .btn.ghost { background: transparent; color: var(--wb-text-secondary); }
+    .btn.ghost:hover { background: var(--wb-bg-hover); color: var(--wb-text); }
+    .btn.danger { background: transparent; color: var(--wb-error); border-color: var(--wb-error-soft); }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .icon-btn { width: 30px; height: 30px; display: grid; place-items: center; border-radius: var(--wb-radius);
+                background: transparent; color: var(--wb-text-secondary); border: 1px solid var(--wb-border);
+                cursor: pointer; }
+    .icon-btn:hover { background: var(--wb-bg-hover); color: var(--wb-text); }
+
+    .field { display: flex; flex-direction: column; gap: 6px; max-width: 280px; }
+    .input { font: inherit; font-size: var(--wb-fs-base); color: var(--wb-text);
+             background: var(--wb-bg-inset); border: 1px solid var(--wb-border);
+             border-radius: var(--wb-radius); padding: 7px 10px; outline: none; }
+    .input:focus { border-color: var(--wb-accent); box-shadow: 0 0 0 3px var(--wb-accent-ring); }
+    .input.mono { font-family: var(--wb-font-mono); font-size: var(--wb-fs-sm); }
+    .select { appearance: none; }
+
+    .seg { display: inline-flex; background: var(--wb-bg-inset); border: 1px solid var(--wb-border);
+           border-radius: var(--wb-radius); padding: 2px; gap: 2px; }
+    .seg button { font: inherit; font-size: var(--wb-fs-sm); padding: 4px 10px; border: none;
+                  border-radius: var(--wb-radius-sm); background: transparent; color: var(--wb-text-secondary); cursor: pointer; }
+    .seg button.on { background: var(--wb-accent); color: var(--wb-text-on-accent); }
+  </style>
+</head>
+<body>
+  <h2>Surrounding tools (shadcn / Radix layer)</h2>
+  <p class="sub">Panels, toolbar, dialogs — same token source as the canvas. Hover from sidebar to canvas should feel like one product.</p>
+
+  <section>
+    <div class="label">Buttons</div>
+    <div class="row">
+      <button class="btn primary">Accept proposal</button>
+      <button class="btn secondary">Add room</button>
+      <button class="btn ghost">Cancel</button>
+      <button class="btn danger">Delete node</button>
+      <button class="btn primary" disabled>Disabled</button>
+      <button class="icon-btn">↶</button>
+      <button class="icon-btn">↷</button>
+    </div>
+  </section>
+
+  <section>
+    <div class="label">Inputs</div>
+    <div class="row" style="align-items:flex-end">
+      <div class="field"><span style="font-size:var(--wb-fs-sm);color:var(--wb-text-secondary)">Node label</span><input class="input" value="Central Hall" /></div>
+      <div class="field"><span style="font-size:var(--wb-fs-sm);color:var(--wb-text-secondary)">hp (numeric)</span><input class="input mono" value="5000" /></div>
+      <select class="input select"><option>Boss</option><option>Item</option><option>NPC</option></select>
+    </div>
+  </section>
+
+  <section>
+    <div class="label">Segmented (edge direction)</div>
+    <div class="seg"><button class="on">Bidirectional</button><button>One-way</button></div>
+  </section>
+</body>
+</html>
