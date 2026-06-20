@@ -527,6 +527,75 @@ fn inv5_node_undo_redo_reverts_materialized_state() {
     );
 }
 
+#[test]
+fn inv2_inv5_canvas_edits_are_logged_and_undoable() {
+    // U1R: the topology canvas routes every structural edit through the core
+    // (no second source of truth, no local snapshot stack). This pins the
+    // three edits the canvas adds — RemoveNode / RemoveEdge / MarkNode — to the
+    // event log: each appends exactly one event (INV-2), state always equals
+    // rebuild(events) (INV-5), and a single undo reverses each edit.
+    let mut core = WorkbenchCore::open_in_memory("global").unwrap();
+
+    core.create_node("a", "A").unwrap();
+    core.create_node("b", "B").unwrap();
+    core.create_edge("a", "b", false).unwrap();
+    let base = core.get_total_events().unwrap();
+
+    // MarkNode → one event; the mark lands in the materialized state.
+    core.mark_node("a", "spawn").unwrap();
+    assert_eq!(
+        core.get_total_events().unwrap(),
+        base + 1,
+        "INV-2 VIOLATION: MarkNode did not append exactly one event"
+    );
+    assert_eq!(
+        core.get_state()["node:a"]["marks"],
+        serde_json::json!(["spawn"]),
+        "MarkNode must be visible in the state the canvas reads back"
+    );
+
+    // RemoveEdge → one event; edge:a->b gone from state.
+    core.remove_edge("a", "b").unwrap();
+    assert_eq!(core.get_total_events().unwrap(), base + 2);
+    assert!(
+        !core.get_state().contains_key("edge:a->b"),
+        "RemoveEdge must drop the edge from the materialized state"
+    );
+
+    // RemoveNode → one event; node:a gone from state.
+    core.remove_node("a").unwrap();
+    assert_eq!(core.get_total_events().unwrap(), base + 3);
+    assert!(
+        !core.get_state().contains_key("node:a"),
+        "RemoveNode must drop the node from the materialized state"
+    );
+
+    // INV-5: materialized state == rebuild(events) at the tip.
+    assert_eq!(
+        core.get_state(),
+        core.rebuild().unwrap(),
+        "INV-5 VIOLATION: canvas edits made state diverge from the event log"
+    );
+
+    // The toolbar Undo is core-true: one undo reverses exactly the last edit
+    // (RemoveNode), restoring node:a — events are never deleted (INV-5).
+    core.undo(1).unwrap();
+    assert!(
+        core.get_state().contains_key("node:a"),
+        "INV-5 VIOLATION: undo must restore the node removed by the canvas"
+    );
+    assert_eq!(
+        core.get_total_events().unwrap(),
+        base + 3,
+        "INV-5 VIOLATION: undo must move the cursor, never delete events"
+    );
+    assert_eq!(
+        core.get_state(),
+        core.rebuild_up_to(core.get_current_seq()).unwrap(),
+        "INV-5: state after undo must equal rebuild up to the cursor"
+    );
+}
+
 // ── INV-6: Single contract interface ─────────────────────────────────
 // ── INV-6: Single contract interface ─────────────────────────────────
 //

@@ -8,6 +8,8 @@ import {
   type Connection,
   type OnNodesChange,
   type OnEdgesChange,
+  type OnNodesDelete,
+  type OnEdgesDelete,
   type NodeMouseHandler,
   applyNodeChanges,
   MarkerType,
@@ -15,13 +17,16 @@ import {
   useEdgesState,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import type { GraphState, RoomNode } from './types';
+import type { GraphState, RoomNode, EdgeDef } from './types';
 import PoiNode from './PoiNode';
 
 interface Props {
   state: GraphState;
   onStateChange: (state: GraphState) => void;
   onToggleEdge: (from: string, to: string) => void;
+  onRemoveNode: (nodeId: string) => void;
+  onRemoveEdge: (from: string, to: string) => void;
+  onMarkNode: (nodeId: string, mark: string) => void;
   onNodeSelect: (nodeId: string | null) => void;
 }
 
@@ -41,9 +46,18 @@ function roomsToNodes(rooms: RoomNode[]): Node[] {
   }));
 }
 
-/** Convert U3 edges to React Flow edges. */
-function edgesToRFEdges(edges: { from_node: string; to_node: string; bidirectional: boolean; label?: string }[]): Edge[] {
-  return edges.map((e, i) => {
+/**
+ * Convert U3 edges to React Flow edges.
+ *
+ * Only edges whose endpoints both still exist are rendered: when a node is
+ * deleted via core (RemoveNode), the core leaves its incident edges in place
+ * (event-sourced — they reappear when the delete is undone), so we filter the
+ * dangling ones out of the projection rather than rendering edges to nowhere.
+ */
+function edgesToRFEdges(edges: EdgeDef[], roomIds: Set<string>): Edge[] {
+  return edges
+    .filter((e) => roomIds.has(e.from_node) && roomIds.has(e.to_node))
+    .map((e, i) => {
     const markerSize = { width: 20, height: 20 };
     const edge: Edge = {
       id: `${e.from_node}-${e.to_node}-${i}`,
@@ -66,15 +80,24 @@ function edgesToRFEdges(edges: { from_node: string; to_node: string; bidirection
   });
 }
 
-export default function TopologyGraph({ state, onStateChange, onToggleEdge, onNodeSelect }: Props) {
+export default function TopologyGraph({
+  state,
+  onStateChange,
+  onToggleEdge,
+  onRemoveNode,
+  onRemoveEdge,
+  onMarkNode,
+  onNodeSelect,
+}: Props) {
+  const roomIds = useMemo(() => new Set(state.rooms.map((r) => r.node_id)), [state.rooms]);
   const [nodes, setNodes, onNodesChangeRF] = useNodesState(roomsToNodes(state.rooms));
-  const [edges, setEdges, onEdgesChangeRF] = useEdgesState(edgesToRFEdges(state.edges));
+  const [edges, setEdges, onEdgesChangeRF] = useEdgesState(edgesToRFEdges(state.edges, roomIds));
 
   // Sync external state changes back into React Flow internal state
   useMemo(() => {
     setNodes(roomsToNodes(state.rooms));
-    setEdges(edgesToRFEdges(state.edges));
-  }, [state, setNodes, setEdges]);
+    setEdges(edgesToRFEdges(state.edges, roomIds));
+  }, [state, roomIds, setNodes, setEdges]);
 
   const onConnect = useCallback(
     (connection: Connection) => {
@@ -117,6 +140,32 @@ export default function TopologyGraph({ state, onStateChange, onToggleEdge, onNo
     [onEdgesChangeRF],
   );
 
+  // Delete key → core RemoveNode. Incident edges cascade in React Flow's view
+  // but stay in core (filtered out by edgesToRFEdges); a single Undo restores
+  // the node and its edges together.
+  const onNodesDelete: OnNodesDelete = useCallback(
+    (deleted) => deleted.forEach((n) => onRemoveNode(n.id)),
+    [onRemoveNode],
+  );
+
+  // Delete key → core RemoveEdge, but only for edges the user explicitly
+  // selected. Edges that React Flow cascades when a node is deleted come
+  // through unselected — those must NOT hit core (the node delete owns them).
+  const onEdgesDelete: OnEdgesDelete = useCallback(
+    (deleted) => deleted.filter((e) => e.selected).forEach((e) => onRemoveEdge(e.source, e.target)),
+    [onRemoveEdge],
+  );
+
+  // Right-click a node → tag it with a semantic mark (spawn, shortcut, …).
+  const onNodeContext: NodeMouseHandler = useCallback(
+    (event, node) => {
+      event.preventDefault();
+      const mark = window.prompt(`Mark for "${node.id}" (e.g. spawn, shortcut):`)?.trim();
+      if (mark) onMarkNode(node.id, mark);
+    },
+    [onMarkNode],
+  );
+
   const onPaneClick = useCallback(
     (_event: React.MouseEvent) => {
       // Placeholder: future click-to-add-node, handled by toolbar for now.
@@ -157,11 +206,14 @@ export default function TopologyGraph({ state, onStateChange, onToggleEdge, onNo
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onNodesDelete={onNodesDelete}
+        onEdgesDelete={onEdgesDelete}
         onPaneClick={onPaneClick}
         onEdgeContextMenu={onEdgeContext}
+        onNodeContextMenu={onNodeContext}
         onNodeClick={onNodeDoubleClick}
         fitView
-        deleteKeyCode={null}
+        deleteKeyCode={['Delete', 'Backspace']}
       >
         <Background color="var(--wb-border)" gap={20} />
         <Controls />

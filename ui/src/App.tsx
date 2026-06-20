@@ -214,6 +214,49 @@ export default function App() {
     [state, coreReady, refreshState],
   );
 
+  // ── Structural deletes / marks (core-routed, undoable) ────────────
+  // Each is a single core command → one event → one Undo step.
+
+  const handleRemoveNode = useCallback(
+    async (nodeId: string) => {
+      if (!coreReady) return;
+      const r = executeCoreCommand({ RemoveNode: { node_id: nodeId } });
+      if (!r.ok) {
+        console.warn('RemoveNode failed:', r.error);
+        return;
+      }
+      if (selectedNodeId === nodeId) setSelectedNodeId(null);
+      await refreshState();
+    },
+    [coreReady, selectedNodeId, refreshState],
+  );
+
+  const handleRemoveEdge = useCallback(
+    async (from: string, to: string) => {
+      if (!coreReady) return;
+      const r = executeCoreCommand({ RemoveEdge: { from_node: from, to_node: to } });
+      if (!r.ok) {
+        console.warn('RemoveEdge failed:', r.error);
+        return;
+      }
+      await refreshState();
+    },
+    [coreReady, refreshState],
+  );
+
+  const handleMarkNode = useCallback(
+    async (nodeId: string, mark: string) => {
+      if (!coreReady) return;
+      const r = executeCoreCommand({ MarkNode: { node_id: nodeId, mark } });
+      if (!r.ok) {
+        console.warn('MarkNode failed:', r.error);
+        return;
+      }
+      await refreshState();
+    },
+    [coreReady, refreshState],
+  );
+
   // ── Node click (add_edge mode) ────────────────────────────────────
 
   const handleNodeClick = useCallback(
@@ -457,6 +500,9 @@ export default function App() {
             state={state}
             onStateChange={handleStateChange}
             onToggleEdge={handleToggleEdge}
+            onRemoveNode={handleRemoveNode}
+            onRemoveEdge={handleRemoveEdge}
+            onMarkNode={handleMarkNode}
             onNodeSelect={handleNodeSelect}
           />
         ) : (
