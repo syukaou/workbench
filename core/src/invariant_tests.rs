@@ -1093,3 +1093,98 @@ fn inv5_inv6_save_load_roundtrips_through_event_log() {
         "INV-5: state after undo must equal rebuild up to the cursor"
     );
 }
+
+// ── MVP acceptance: SPEC §4.3 full loop, end to end ──────────────────
+
+#[test]
+fn mvp_acceptance_spec_4_3_end_to_end() {
+    // The SPEC §4.3 acceptance loop run entirely through the WorkbenchCore
+    // contract: AI proposal (parsed, not yet accepted) → accept → topology
+    // appears → human adds a room → defines a Boss and binds a POI → undo/redo
+    // any step → save + reload persists. This ties the per-feature guardrails
+    // (INV-3 / INV-5 / INV-6) into the single acceptance the SPEC defines.
+
+    let mut core = WorkbenchCore::open_in_memory("global").unwrap();
+
+    // 1. AI proposal: "central hall + three branches + one one-way shortcut".
+    //    Parsing the typed proposal must NOT write the core (INV-3).
+    let proposal = r#"[
+        {"CreateNode": {"node_id": "central", "label": "中央大厅"}},
+        {"CreateNode": {"node_id": "branch_a", "label": "支线A"}},
+        {"CreateNode": {"node_id": "branch_b", "label": "支线B"}},
+        {"CreateNode": {"node_id": "branch_c", "label": "支线C"}},
+        {"CreateEdge": {"from_node": "central", "to_node": "branch_a", "bidirectional": true}},
+        {"CreateEdge": {"from_node": "central", "to_node": "branch_b", "bidirectional": true}},
+        {"CreateEdge": {"from_node": "central", "to_node": "branch_c", "bidirectional": true}},
+        {"CreateEdge": {"from_node": "branch_a", "to_node": "branch_c", "bidirectional": false}},
+        {"MarkNode": {"node_id": "central", "mark": "spawn"}}
+    ]"#;
+    let commands = crate::cli_bridge::parse_proposals(proposal).unwrap();
+    assert_eq!(commands.len(), 9);
+    assert_eq!(
+        core.get_total_events().unwrap(),
+        0,
+        "INV-3: parsing an AI proposal must not write the core before acceptance"
+    );
+
+    // 2. Accept → execute each proposed command through the sole write path.
+    for cmd in commands {
+        core.execute_command(cmd).unwrap();
+    }
+    let st = core.get_state();
+    assert!(st.contains_key("node:central"));
+    assert!(
+        !st["edge:branch_a->branch_c"]["bidirectional"]
+            .as_bool()
+            .unwrap(),
+        "the one-way shortcut must survive accept"
+    );
+    assert!(st["node:central"]["marks"]
+        .as_array()
+        .unwrap()
+        .contains(&serde_json::json!("spawn")));
+
+    // 3. Human extends: add a room manually.
+    core.create_node("vault", "宝库").unwrap();
+
+    // 4. Define a Boss, fill a value, attach a POI that references it.
+    core.create_entity_type("Boss").unwrap();
+    core.create_entity_instance("Boss", "dragon").unwrap();
+    core.set_entity_field("dragon", "hp", serde_json::json!(5000))
+        .unwrap();
+    core.attach_poi("vault", "poi_boss", Some("dragon")).unwrap();
+    let st = core.get_state();
+    assert_eq!(st["node:vault"]["pois"][0]["entity_ref"], "dragon");
+    assert_eq!(st["entity_instance:dragon"]["fields"]["hp"], 5000);
+
+    // 5. Any step is undoable (re-fold from the log), then redoable.
+    let seq_before = core.get_current_seq();
+    core.undo(1).unwrap(); // reverse the POI attach
+    assert_eq!(
+        core.get_state()["node:vault"]["pois"],
+        serde_json::json!([]),
+        "INV-5: undo must reverse the POI attach via the event log"
+    );
+    core.redo(1).unwrap();
+    assert_eq!(core.get_current_seq(), seq_before);
+    assert_eq!(
+        core.get_state()["node:vault"]["pois"][0]["poi_id"],
+        "poi_boss"
+    );
+
+    // 6. Save → reload (simulated restart): data persists, rebuilt from the log.
+    let saved = core.get_history().unwrap();
+    let final_state = core.get_state();
+    let mut reloaded = WorkbenchCore::open_in_memory("global").unwrap();
+    reloaded.import_snapshot(&saved).unwrap();
+    assert_eq!(
+        reloaded.get_state(),
+        final_state,
+        "reload must restore the exact state"
+    );
+    assert_eq!(
+        reloaded.get_state(),
+        reloaded.rebuild().unwrap(),
+        "INV-5: reloaded state == fold(events)"
+    );
+}
