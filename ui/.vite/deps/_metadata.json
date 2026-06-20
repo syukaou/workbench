@@ -1,0 +1,72 @@
+{
+  "hash": "eb53c0b1",
+  "configHash": "47c6b536",
+  "lockfileHash": "fd454d24",
+  "browserHash": "417ea5a8",
+  "optimized": {
+    "react-dom": {
+      "src": "../../node_modules/react-dom/index.js",
+      "file": "react-dom.js",
+      "fileHash": "5c8ad04e",
+      "needsInterop": true
+    },
+    "react-dom/client": {
+      "src": "../../node_modules/react-dom/client.js",
+      "file": "react-dom_client.js",
+      "fileHash": "833712ab",
+      "needsInterop": true
+    },
+    "react": {
+      "src": "../../node_modules/react/index.js",
+      "file": "react.js",
+      "fileHash": "10033fc2",
+      "needsInterop": true
+    },
+    "react/jsx-dev-runtime": {
+      "src": "../../node_modules/react/jsx-dev-runtime.js",
+      "file": "react_jsx-dev-runtime.js",
+      "fileHash": "1bde1080",
+      "needsInterop": true
+    },
+    "react/jsx-runtime": {
+      "src": "../../node_modules/react/jsx-runtime.js",
+      "file": "react_jsx-runtime.js",
+      "fileHash": "cc9934e6",
+      "needsInterop": true
+    },
+    "reactflow": {
+      "src": "../../node_modules/reactflow/dist/esm/index.mjs",
+      "file": "reactflow.js",
+      "fileHash": "7a621ac0",
+      "needsInterop": false
+    },
+    "three": {
+      "src": "../../node_modules/three/build/three.module.js",
+      "file": "three.js",
+      "fileHash": "16b472e7",
+      "needsInterop": false
+    },
+    "three/examples/jsm/controls/OrbitControls.js": {
+      "src": "../../node_modules/three/examples/jsm/controls/OrbitControls.js",
+      "file": "three_examples_jsm_controls_OrbitControls__js.js",
+      "fileHash": "53759600",
+      "needsInterop": false
+    },
+    "three/examples/jsm/renderers/CSS2DRenderer.js": {
+      "src": "../../node_modules/three/examples/jsm/renderers/CSS2DRenderer.js",
+      "file": "three_examples_jsm_renderers_CSS2DRenderer__js.js",
+      "fileHash": "ba4ba3a6",
+      "needsInterop": false
+    }
+  },
+  "chunks": {
+    "react-Ea1HnpA1": {
+      "file": "react-Ea1HnpA1.js",
+      "isDynamicEntry": false
+    },
+    "three.module-Dhi4sXJn": {
+      "file": "three.module-Dhi4sXJn.js",
+      "isDynamicEntry": false
+    }
+  }
+}
