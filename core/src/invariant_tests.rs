@@ -535,27 +535,54 @@ fn inv6_contract_is_single_entry_point() {
 
 #[test]
 fn inv6_core_modules_not_publicly_reachable() {
-    // INV-6: Verify that core internal modules (engine, log) are not
-    // re-exported. Only WorkbenchCore + supporting types (Event, EventType,
-    // Error, Projection traits) are public.
+    // INV-6: the deterministic core's internals — engine (Engine) and the
+    // event store (log::EventStore / memory_store::MemoryStore) — must NOT be
+    // part of the public API. If they were, a consumer could construct an
+    // Engine or EventStore directly and bypass WorkbenchCore, defeating the
+    // single contract boundary.
     //
-    // This test is compile-time: if someone makes `engine` or `log` pub,
-    // the test won't compile because those types aren't accessible here.
+    // We enforce this structurally by scanning lib.rs (same approach as the
+    // INV-3/4/7/8 source-scan guardrails). A future `pub mod engine` or
+    // `pub use log::EventStore` makes this test fail — the guardrail actually
+    // bites, instead of merely asserting on a comment.
+    let lib_rs = include_str!("lib.rs");
 
-    // The fact that this test compiles at all, without referencing
-    // crate::engine::Engine or crate::log::EventStore, proves that
-    // those modules are not pub in lib.rs. We supplement with a
-    // runtime check that the public API surface is self-contained.
+    let forbidden_exposures = [
+        "pub mod engine",
+        "pub mod log",
+        "pub mod memory_store",
+        "pub use log::EventStore",
+        "pub use memory_store",
+        "pub use engine::Engine",
+    ];
+    for pattern in &forbidden_exposures {
+        assert!(
+            !lib_rs.contains(pattern),
+            "INV-6 VIOLATION: lib.rs exposes a core internal via '{}' — consumers could bypass WorkbenchCore",
+            pattern
+        );
+    }
 
+    // The contract type and the typed Command surface (needed for the public
+    // execute_command signature) MUST be exported — that is the boundary.
+    assert!(
+        lib_rs.contains("pub use contract::WorkbenchCore"),
+        "INV-6: WorkbenchCore must be exported as the single contract boundary"
+    );
+    assert!(
+        lib_rs.contains("pub use engine::Command"),
+        "INV-6: Command must be re-exported while the engine module stays private"
+    );
+
+    // Runtime: every consumer operation works through the contract alone,
+    // with no direct engine/store access.
     let mut core = WorkbenchCore::open_in_memory("global").unwrap();
     core.set("a", serde_json::json!(1)).unwrap();
     core.set("b", serde_json::json!(2)).unwrap();
 
-    // Execute a domain command through the contract boundary.
     let event = core.create_node("room1", "Central Hall").unwrap();
     assert_eq!(event.event_type, EventType::NodeCreated);
 
-    // All operations go through the contract — no direct engine access.
     let history = core.get_history().unwrap();
     assert_eq!(history.len(), 3);
 }
