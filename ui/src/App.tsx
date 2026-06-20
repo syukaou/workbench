@@ -3,7 +3,7 @@ import TopologyGraph from './TopologyGraph';
 import { proposalsToOverlay } from './proposalOverlay';
 import Preview3D from './Preview3D';
 import Toolbar from './Toolbar';
-import PoiEditor from './PoiEditor';
+import Sidebar from './Sidebar';
 import {
   loadState,
   loadMockState,
@@ -44,9 +44,6 @@ export default function App() {
   // ── AI Proposal state ──────────────────────────────────────────────
   const [proposals, setProposals] = useState<Record<string, unknown>[] | null>(null);
   const [proposalLoading, setProposalLoading] = useState(false);
-
-  // ── POI counter ───────────────────────────────────────────────────
-  const poiCounterRef = useRef(0);
 
   // ── Refresh the render cache + history cursor from the core ────────
   // This is the ONLY way state becomes visible: read it back from the core
@@ -336,24 +333,36 @@ export default function App() {
     [refreshState],
   );
 
-  const handleCreateInstanceAndAttach = useCallback(
-    (nodeId: string, poiId: string, entityType: string, fields: Record<string, string>) => {
-      poiCounterRef.current++;
-      const instanceId = `inst-${poiCounterRef.current}-${poiId}`;
+  // Re-bind a POI to an existing entity instance: detach then re-attach so the
+  // node never accrues duplicate poi_id entries. Two core events, both undoable.
+  const handleBindPoiEntity = useCallback(
+    (nodeId: string, poiId: string, entityRef: string | null) => {
+      executeCoreCommand({ DetachPOI: { node_id: nodeId, poi_id: poiId } });
+      executeCoreCommand({ AttachPOI: { node_id: nodeId, poi_id: poiId, entity_ref: entityRef ?? null } });
+      refreshState();
+    },
+    [refreshState],
+  );
 
-      const r1 = executeCoreCommand({ CreateEntityInstance: { entity_type: entityType, instance_id: instanceId } });
-      if (!r1.ok) {
-        console.warn('CreateEntityInstance failed:', r1.error);
+  const handleCreateEntityType = useCallback(
+    (name: string) => {
+      const r = executeCoreCommand({ CreateEntityType: { name } });
+      if (!r.ok) {
+        console.warn('CreateEntityType failed:', r.error);
         return;
       }
-      for (const [field, value] of Object.entries(fields)) {
-        if (value) {
-          executeCoreCommand({ SetEntityField: { instance_id: instanceId, field, value } });
-        }
-      }
-      const r2 = executeCoreCommand({ AttachPOI: { node_id: nodeId, poi_id: poiId, entity_ref: instanceId } });
-      if (!r2.ok) console.warn('AttachPOI failed:', r2.error);
+      refreshState();
+    },
+    [refreshState],
+  );
 
+  const handleCreateEntityInstance = useCallback(
+    (entityType: string, instanceId: string) => {
+      const r = executeCoreCommand({ CreateEntityInstance: { entity_type: entityType, instance_id: instanceId } });
+      if (!r.ok) {
+        console.warn('CreateEntityInstance failed:', r.error);
+        return;
+      }
       refreshState();
     },
     [refreshState],
@@ -519,17 +528,20 @@ export default function App() {
         ) : (
           <Preview3D state={state} />
         )}
-        {viewMode === '2d' && selectedNode && (
-          <PoiEditor
-            nodeId={selectedNode.node_id}
-            nodeLabel={selectedNode.label}
-            pois={selectedNode.pois}
+        {viewMode === '2d' && (
+          <Sidebar
+            selectedNode={selectedNode}
+            edges={state.edges}
             entityState={entityState}
             onAttachPoi={handleAttachPoi}
             onDetachPoi={handleDetachPoi}
+            onBindPoiEntity={handleBindPoiEntity}
             onSetField={handleSetField}
-            onCreateInstanceAndAttach={handleCreateInstanceAndAttach}
-            onClose={() => setSelectedNodeId(null)}
+            onCreateEntityType={handleCreateEntityType}
+            onCreateEntityInstance={handleCreateEntityInstance}
+            onRemoveNode={handleRemoveNode}
+            onRemoveEdge={handleRemoveEdge}
+            onDeselect={() => setSelectedNodeId(null)}
           />
         )}
       </div>

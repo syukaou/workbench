@@ -775,3 +775,65 @@
   border-color: var(--wb-accent);
   color: var(--wb-accent-hover);
 }
+
+/* ── Sidebar (U3R): node panel + entity management ──────────────── */
+
+.sb-block {
+  margin-bottom: var(--wb-space-2);
+}
+
+.sb-block-title {
+  margin-bottom: var(--wb-space-2);
+}
+
+.sb-section-divider {
+  height: 1px;
+  background: var(--wb-border);
+  margin: var(--wb-space-3) 0;
+}
+
+.sb-list {
+  margin-bottom: var(--wb-space-2);
+}
+
+.sb-list-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.sb-edges {
+  margin-bottom: var(--wb-space-2);
+}
+
+.sb-edge-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.sb-edge-label {
+  flex: 1;
+  font-family: var(--wb-font-mono);
+  font-size: var(--wb-fs-xs);
+  color: var(--wb-text-secondary);
+}
+
+.sb-delete-node {
+  width: 100%;
+  padding: 6px 0;
+  font-size: var(--wb-fs-sm);
+  font-weight: var(--wb-fw-semibold);
+  border: 1px solid var(--wb-error);
+  border-radius: var(--wb-radius);
+  background: var(--wb-error-soft);
+  color: var(--wb-error);
+  cursor: pointer;
+  transition: filter var(--wb-dur-fast) var(--wb-ease);
+}
+
+.sb-delete-node:hover {
+  filter: brightness(1.2);
+}
