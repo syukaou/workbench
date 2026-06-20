@@ -200,6 +200,89 @@ pub fn import_snapshot(json_str: &str) -> JsValue {
     })
 }
 
+// ── Undo / Redo (M1: expose the event-log undo to JS — INV-5) ─────────
+// The UI must delegate undo/redo to the core's event log, never reimplement
+// it. These wrap WorkbenchCore::{undo,redo,undo_all,redo_all} and report the
+// cursor via undo_redo_status. NothingToUndo/Redo is a no-op (count 0), not
+// an error, so a JS-side undo at seq 0 doesn't throw.
+
+/// Undo `count` events via the event log. Returns `{"ok":true,"undone":N}`.
+#[wasm_bindgen]
+pub fn undo(count: u32) -> JsValue {
+    ensure_core();
+    CORE.with(|cell| {
+        let mut core = cell.borrow_mut();
+        let c = core.as_mut().unwrap();
+        match c.undo(count) {
+            Ok(n) => JsValue::from_str(&format!(r#"{{"ok":true,"undone":{}}}"#, n)),
+            Err(crate::Error::NothingToUndo) => JsValue::from_str(r#"{"ok":true,"undone":0}"#),
+            Err(e) => JsValue::from_str(&format!(r#"{{"ok":false,"error":"{}"}}"#, e)),
+        }
+    })
+}
+
+/// Redo `count` events. Returns `{"ok":true,"redone":N}`.
+#[wasm_bindgen]
+pub fn redo(count: u32) -> JsValue {
+    ensure_core();
+    CORE.with(|cell| {
+        let mut core = cell.borrow_mut();
+        let c = core.as_mut().unwrap();
+        match c.redo(count) {
+            Ok(n) => JsValue::from_str(&format!(r#"{{"ok":true,"redone":{}}}"#, n)),
+            Err(crate::Error::NothingToRedo { .. }) => {
+                JsValue::from_str(r#"{"ok":true,"redone":0}"#)
+            }
+            Err(e) => JsValue::from_str(&format!(r#"{{"ok":false,"error":"{}"}}"#, e)),
+        }
+    })
+}
+
+/// Undo all events back to seq 0. Returns `{"ok":true,"undone":N}`.
+#[wasm_bindgen]
+pub fn undo_all() -> JsValue {
+    ensure_core();
+    CORE.with(|cell| {
+        let mut core = cell.borrow_mut();
+        let c = core.as_mut().unwrap();
+        match c.undo_all() {
+            Ok(n) => JsValue::from_str(&format!(r#"{{"ok":true,"undone":{}}}"#, n)),
+            Err(e) => JsValue::from_str(&format!(r#"{{"ok":false,"error":"{}"}}"#, e)),
+        }
+    })
+}
+
+/// Redo all remaining events. Returns `{"ok":true,"redone":N}`.
+#[wasm_bindgen]
+pub fn redo_all() -> JsValue {
+    ensure_core();
+    CORE.with(|cell| {
+        let mut core = cell.borrow_mut();
+        let c = core.as_mut().unwrap();
+        match c.redo_all() {
+            Ok(n) => JsValue::from_str(&format!(r#"{{"ok":true,"redone":{}}}"#, n)),
+            Err(e) => JsValue::from_str(&format!(r#"{{"ok":false,"error":"{}"}}"#, e)),
+        }
+    })
+}
+
+/// Undo/redo cursor status: `{"current_seq":S,"total_events":T}`.
+/// The UI derives canUndo = current_seq > 0, canRedo = current_seq < total_events.
+#[wasm_bindgen]
+pub fn undo_redo_status() -> JsValue {
+    ensure_core();
+    CORE.with(|cell| {
+        let core = cell.borrow();
+        let c = core.as_ref().unwrap();
+        let seq = c.get_current_seq();
+        let total = c.get_total_events().unwrap_or(0);
+        JsValue::from_str(&format!(
+            r#"{{"current_seq":{},"total_events":{}}}"#,
+            seq, total
+        ))
+    })
+}
+
 /// Generate topology proposals from a natural language intent.
 ///
 /// In WASM, we use a mock proposal generator (CLI is native-only, INV-4).
