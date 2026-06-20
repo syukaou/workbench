@@ -22,7 +22,6 @@ interface Props {
   state: GraphState;
   onStateChange: (state: GraphState) => void;
   onToggleEdge: (from: string, to: string) => void;
-  onLabelEdge: (from: string, to: string, label: string) => void;
   onNodeSelect: (nodeId: string | null) => void;
 }
 
@@ -52,30 +51,22 @@ function edgesToRFEdges(edges: { from_node: string; to_node: string; bidirection
       target: e.to_node,
       type: 'default',
       markerEnd: { type: MarkerType.ArrowClosed, ...markerSize },
-      style: { stroke: '#64748b', strokeWidth: 2 },
+      // Canvas reads the single design-token source (DESIGN §2).
+      style: { stroke: 'var(--wb-edge-bi)', strokeWidth: 2 },
     };
     if (e.bidirectional) {
       edge.markerStart = { type: MarkerType.ArrowClosed, ...markerSize };
-      edge.style = { stroke: '#3b82f6', strokeWidth: 3 };
+      edge.style = { stroke: 'var(--wb-edge-bi)', strokeWidth: 3 };
     } else {
       // One-way edges: thicker, animated dash to indicate direction
-      edge.style = { stroke: '#f59e0b', strokeWidth: 3 };
+      edge.style = { stroke: 'var(--wb-edge-uni)', strokeWidth: 3 };
       edge.animated = true;
-    }
-    // Edge label
-    if (e.label) {
-      edge.label = e.label;
-      edge.labelStyle = { fill: '#e2e8f0', fontSize: 11, fontWeight: 600 };
-      edge.labelBgStyle = { fill: '#1e293b', fillOpacity: 0.9 };
-      edge.labelBgPadding = [4, 6] as [number, number];
-      edge.labelBgBorderRadius = 4;
-      edge.labelShowBg = true;
     }
     return edge;
   });
 }
 
-export default function TopologyGraph({ state, onStateChange, onToggleEdge, onLabelEdge, onNodeSelect }: Props) {
+export default function TopologyGraph({ state, onStateChange, onToggleEdge, onNodeSelect }: Props) {
   const [nodes, setNodes, onNodesChangeRF] = useNodesState(roomsToNodes(state.rooms));
   const [edges, setEdges, onEdgesChangeRF] = useEdgesState(edgesToRFEdges(state.edges));
 
@@ -149,22 +140,6 @@ export default function TopologyGraph({ state, onStateChange, onToggleEdge, onLa
     [state.edges, onToggleEdge],
   );
 
-  const onEdgeDoubleClick = useCallback(
-    (_event: React.MouseEvent, edge: Edge) => {
-      const fromNode = edge.source;
-      const toNode = edge.target;
-      const match = state.edges.find(
-        (e) => e.from_node === fromNode && e.to_node === toNode,
-      );
-      const currentLabel = match?.label || '';
-      const label = prompt('Edge label (e.g. "needs key", "one-way", "BOSS door"):', currentLabel);
-      if (label !== null) {
-        onLabelEdge(fromNode, toNode, label.trim());
-      }
-    },
-    [state.edges, onLabelEdge],
-  );
-
   const onNodeDoubleClick: NodeMouseHandler = useCallback(
     (_event, node) => {
       // Single click: select node for POI editing
@@ -184,12 +159,11 @@ export default function TopologyGraph({ state, onStateChange, onToggleEdge, onLa
         onConnect={onConnect}
         onPaneClick={onPaneClick}
         onEdgeContextMenu={onEdgeContext}
-        onEdgeDoubleClick={onEdgeDoubleClick}
         onNodeClick={onNodeDoubleClick}
         fitView
         deleteKeyCode={null}
       >
-        <Background color="#e2e8f0" gap={20} />
+        <Background color="var(--wb-border)" gap={20} />
         <Controls />
       </ReactFlow>
     </div>

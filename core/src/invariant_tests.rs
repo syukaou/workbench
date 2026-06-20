@@ -25,6 +25,63 @@ fn inv1_state_is_derived_from_events() {
     );
 }
 
+#[test]
+fn inv1_undo_redo_cursor_is_single_source_for_can_undo_redo() {
+    // core-as-truth (INV-1 / U0R UI refactor): the frontend keeps NO undo
+    // stack of its own. It derives canUndo/canRedo solely from the core's
+    // event-log cursor, exposed to WASM as
+    //     undo_redo_status() = { current_seq, total_events }
+    // with  canUndo = current_seq > 0  and  canRedo = current_seq < total_events.
+    // Pinning that cursor contract here means the UI's single source of truth
+    // can never silently drift from the event log.
+    let mut core = WorkbenchCore::open_in_memory("global").unwrap();
+
+    // Fresh log: nothing to undo or redo.
+    assert_eq!(core.get_current_seq(), 0);
+    assert_eq!(core.get_total_events().unwrap(), 0);
+
+    core.create_node("a", "A").unwrap();
+    core.create_node("b", "B").unwrap();
+    core.create_node("c", "C").unwrap();
+    assert_eq!(core.get_current_seq(), 3, "cursor must advance with each event");
+    assert_eq!(core.get_total_events().unwrap(), 3);
+    // At the tip: canUndo true, canRedo false.
+    assert!(core.get_current_seq() > 0);
+    assert!(!(core.get_current_seq() < core.get_total_events().unwrap()));
+
+    // Undo two: the cursor rewinds, but events are never deleted (INV-5).
+    core.undo(2).unwrap();
+    assert_eq!(core.get_current_seq(), 1, "undo must move the cursor back");
+    assert_eq!(
+        core.get_total_events().unwrap(),
+        3,
+        "INV-1/INV-5: events are never deleted — only the cursor moves"
+    );
+    // Mid-history: both canUndo and canRedo are true.
+    assert!(core.get_current_seq() > 0);
+    assert!(core.get_current_seq() < core.get_total_events().unwrap());
+
+    // Redo one: the materialized state the UI reads back must reflect exactly
+    // the events up to the cursor (a, b present; c still folded out).
+    core.redo(1).unwrap();
+    assert_eq!(core.get_current_seq(), 2);
+    let at_cursor = core.get_state();
+    assert!(at_cursor.contains_key("node:a") && at_cursor.contains_key("node:b"));
+    assert!(
+        !at_cursor.contains_key("node:c"),
+        "INV-1 VIOLATION: get_state() (the UI's source) shows an event past the cursor"
+    );
+
+    // Back to the root: canUndo false, canRedo true; state is empty again.
+    core.undo_all().unwrap();
+    assert_eq!(core.get_current_seq(), 0);
+    assert!(core.get_current_seq() < core.get_total_events().unwrap());
+    assert!(
+        core.get_state().is_empty(),
+        "INV-1: at cursor 0 the UI must see empty state, even though events remain in the log"
+    );
+}
+
 // ── INV-2: Sole write path ───────────────────────────────────────────
 
 #[test]

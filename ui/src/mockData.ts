@@ -5,10 +5,12 @@
  * UI positions (x, y) are managed locally in React state.
  */
 import type { GraphState, RoomNode, EdgeDef, EntityState, EntityTypeInfo, EntityInstanceInfo } from './types';
-import { ensureCore, getCoreState, executeCoreCommand, proposeViaCore, exportCoreSnapshot, importCoreSnapshot } from './coreBridge';
+import { ensureCore, getCoreState, executeCoreCommand, proposeViaCore, exportCoreSnapshot, importCoreSnapshot, coreUndo, coreRedo, coreUndoRedoStatus } from './coreBridge';
 
 // Re-export executeCoreCommand for direct use by App
 export { executeCoreCommand };
+// Re-export core-as-truth undo/redo (event-log cursor) for App.
+export { coreUndo, coreRedo, coreUndoRedoStatus };
 
 // ── Local position store (not in core) ───────────────────────────────
 
