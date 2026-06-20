@@ -56,6 +56,32 @@ export function import_snapshot(json_str: string): any;
  */
 export function propose(intent: string): any;
 
+/**
+ * Redo `count` events. Returns `{"ok":true,"redone":N}`.
+ */
+export function redo(count: number): any;
+
+/**
+ * Redo all remaining events. Returns `{"ok":true,"redone":N}`.
+ */
+export function redo_all(): any;
+
+/**
+ * Undo `count` events via the event log. Returns `{"ok":true,"undone":N}`.
+ */
+export function undo(count: number): any;
+
+/**
+ * Undo all events back to seq 0. Returns `{"ok":true,"undone":N}`.
+ */
+export function undo_all(): any;
+
+/**
+ * Undo/redo cursor status: `{"current_seq":S,"total_events":T}`.
+ * The UI derives canUndo = current_seq > 0, canRedo = current_seq < total_events.
+ */
+export function undo_redo_status(): any;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
@@ -63,8 +89,13 @@ export interface InitOutput {
     readonly execute_command: (a: number, b: number) => any;
     readonly import_snapshot: (a: number, b: number) => any;
     readonly propose: (a: number, b: number) => any;
+    readonly redo: (a: number) => any;
+    readonly undo: (a: number) => any;
     readonly export_snapshot: () => any;
     readonly get_state: () => any;
+    readonly redo_all: () => any;
+    readonly undo_all: () => any;
+    readonly undo_redo_status: () => any;
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

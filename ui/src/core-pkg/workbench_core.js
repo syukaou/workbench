@@ -83,6 +83,54 @@ export function propose(intent) {
     const ret = wasm.propose(ptr0, len0);
     return ret;
 }
+
+/**
+ * Redo `count` events. Returns `{"ok":true,"redone":N}`.
+ * @param {number} count
+ * @returns {any}
+ */
+export function redo(count) {
+    const ret = wasm.redo(count);
+    return ret;
+}
+
+/**
+ * Redo all remaining events. Returns `{"ok":true,"redone":N}`.
+ * @returns {any}
+ */
+export function redo_all() {
+    const ret = wasm.redo_all();
+    return ret;
+}
+
+/**
+ * Undo `count` events via the event log. Returns `{"ok":true,"undone":N}`.
+ * @param {number} count
+ * @returns {any}
+ */
+export function undo(count) {
+    const ret = wasm.undo(count);
+    return ret;
+}
+
+/**
+ * Undo all events back to seq 0. Returns `{"ok":true,"undone":N}`.
+ * @returns {any}
+ */
+export function undo_all() {
+    const ret = wasm.undo_all();
+    return ret;
+}
+
+/**
+ * Undo/redo cursor status: `{"current_seq":S,"total_events":T}`.
+ * The UI derives canUndo = current_seq > 0, canRedo = current_seq < total_events.
+ * @returns {any}
+ */
+export function undo_redo_status() {
+    const ret = wasm.undo_redo_status();
+    return ret;
+}
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,

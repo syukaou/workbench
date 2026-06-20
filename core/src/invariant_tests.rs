@@ -434,6 +434,42 @@ fn inv5_events_are_never_deleted() {
     );
 }
 
+#[test]
+fn inv5_node_undo_redo_reverts_materialized_state() {
+    // M1 / INV-5: the contract undo/redo that the WASM bridge now exposes must
+    // revert the materialized state by re-folding the event log. create_node
+    // then undo leaves no node:<id> in get_state(); redo restores it; and
+    // state == rebuild(events) throughout. This is the invariant the UI's
+    // single-source-of-truth refactor (U2-rebuild) will rely on.
+    let mut core = WorkbenchCore::open_in_memory("global").unwrap();
+
+    core.create_node("x", "Room X").unwrap();
+    assert!(
+        core.get_state().contains_key("node:x"),
+        "node:x should exist after create_node"
+    );
+
+    core.undo(1).unwrap();
+    assert!(
+        !core.get_state().contains_key("node:x"),
+        "INV-5 VIOLATION: undo must remove node:x from the materialized state"
+    );
+    assert_eq!(core.get_current_seq(), 0);
+
+    core.redo(1).unwrap();
+    assert!(
+        core.get_state().contains_key("node:x"),
+        "redo must restore node:x"
+    );
+
+    let rebuilt = core.rebuild().unwrap();
+    assert_eq!(
+        core.get_state(),
+        rebuilt,
+        "INV-5: materialized state must equal rebuild(events) after undo/redo"
+    );
+}
+
 // ── INV-6: Single contract interface ─────────────────────────────────
 // ── INV-6: Single contract interface ─────────────────────────────────
 //
