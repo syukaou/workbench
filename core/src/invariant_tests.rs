@@ -254,6 +254,62 @@ fn inv3_all_writes_require_explicit_action() {
     );
 }
 
+#[test]
+fn inv3_proposal_preview_does_not_mutate_core() {
+    // U2R overlay rule: a typed AI proposal may be previewed (rendered as a
+    // pending overlay) WITHOUT touching the core. Only an explicit, per-command
+    // accept writes the event log — one event per command. This is the runtime
+    // guarantee behind the canvas "pending" preview.
+    use crate::cli_bridge::parse_proposals;
+
+    // The AI's typed output for "central hall + 3 branches + a one-way shortcut".
+    let raw = r#"[
+        {"CreateNode": {"node_id": "hall", "label": "Central Hall"}},
+        {"CreateNode": {"node_id": "branch_a", "label": "Branch A"}},
+        {"CreateNode": {"node_id": "branch_b", "label": "Branch B"}},
+        {"CreateNode": {"node_id": "branch_c", "label": "Branch C"}},
+        {"CreateEdge": {"from_node": "hall", "to_node": "branch_a", "bidirectional": true}},
+        {"CreateEdge": {"from_node": "hall", "to_node": "branch_b", "bidirectional": true}},
+        {"CreateEdge": {"from_node": "hall", "to_node": "branch_c", "bidirectional": true}},
+        {"CreateEdge": {"from_node": "branch_a", "to_node": "branch_c", "bidirectional": false}},
+        {"MarkNode": {"node_id": "hall", "mark": "spawn"}}
+    ]"#;
+
+    let mut core = WorkbenchCore::open_in_memory("global").unwrap();
+
+    // Parsing the proposal into typed commands is the overlay's job — it must
+    // NOT write the core. The preview holds these commands; the log stays empty.
+    let commands = parse_proposals(raw).unwrap();
+    assert_eq!(commands.len(), 9);
+    assert_eq!(
+        core.get_total_events().unwrap(),
+        0,
+        "INV-3 VIOLATION: holding/previewing an AI proposal mutated the core"
+    );
+    assert!(
+        core.get_state().is_empty(),
+        "INV-3 VIOLATION: proposal preview leaked into core state before accept"
+    );
+
+    // Accept = dispatch each command through the contract, one event each.
+    let mut expected = 0;
+    for cmd in commands {
+        core.execute_command(cmd).unwrap();
+        expected += 1;
+        assert_eq!(
+            core.get_total_events().unwrap(),
+            expected,
+            "INV-3 VIOLATION: accepting a command did not append exactly one event"
+        );
+    }
+
+    // After accepting, the topology is now committed core truth.
+    let state = core.get_state();
+    assert!(state.contains_key("node:hall"));
+    assert!(state.contains_key("edge:hall->branch_a"));
+    assert!(state.contains_key("edge:branch_a->branch_c"));
+}
+
 // ── INV-4 & INV-7: Core has zero LLM / HTTP / rendering deps ─────────
 
 #[test]
