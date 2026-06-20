@@ -1,5 +1,7 @@
 import { useState, useCallback } from 'react';
 import type { GraphState } from './types';
+import { Button } from './components/ui/button';
+import { Separator } from './components/ui/separator';
 
 interface Props {
   state: GraphState;
@@ -104,46 +106,46 @@ export default function Toolbar({
       <div className="toolbar">
         <h2 className="toolbar-title">Workbench Topology</h2>
         <div className="toolbar-buttons">
-          <button title="Add a new room" onClick={handleAddRoom}>
+          <Button title="Add a new room" onClick={handleAddRoom}>
             ＋ Add Room
-          </button>
-          <button
+          </Button>
+          <Button
             title="Add edge (click two nodes)"
-            className={mode === 'add_edge' ? 'active' : ''}
+            active={mode === 'add_edge'}
             onClick={handleAddEdge}
           >
             🔗 Add Edge
-          </button>
-          <span className="toolbar-separator" />
-          <button title="Undo last action" onClick={onUndo} disabled={!canUndo}>
+          </Button>
+          <Separator orientation="vertical" />
+          <Button title="Undo last action" onClick={onUndo} disabled={!canUndo}>
             ↶ Undo
-          </button>
-          <button title="Redo last undone action" onClick={onRedo} disabled={!canRedo}>
+          </Button>
+          <Button title="Redo last undone action" onClick={onRedo} disabled={!canRedo}>
             ↷ Redo
-          </button>
-          <span className="toolbar-separator" />
-          <button
+          </Button>
+          <Separator orientation="vertical" />
+          <Button
             title="Save project (.workbench.json)"
             onClick={onSave}
             disabled={!coreReady}
           >
             💾 Save
-          </button>
-          <button
+          </Button>
+          <Button
             title="Load project (.workbench.json)"
             onClick={onLoad}
             disabled={!coreReady}
           >
             📂 Load
-          </button>
-          <span className="toolbar-separator" />
-          <button
+          </Button>
+          <Separator orientation="vertical" />
+          <Button
             title={`Switch to ${viewMode === '2d' ? '3D preview' : '2D editor'}`}
             onClick={onToggleView}
           >
             {viewMode === '2d' ? '🌐 3D' : '📐 2D'}
-          </button>
-          <span className="toolbar-separator" />
+          </Button>
+          <Separator orientation="vertical" />
           <span className="toolbar-info">
             {state.rooms.length} rooms · {state.edges.length} edges
           </span>

@@ -5,7 +5,6 @@ import Toolbar from './Toolbar';
 import PoiEditor from './PoiEditor';
 import {
   loadState,
-  executeCommand,
   loadMockState,
   setPosition,
   requestProposal,
@@ -13,17 +12,26 @@ import {
   executeCoreCommand,
   buildProjectSave,
   loadProject,
+  coreUndo,
+  coreRedo,
+  coreUndoRedoStatus,
 } from './mockData';
 import type { GraphState, EntityState } from './types';
 import './App.css';
 
+/**
+ * core-as-truth (INV-1): the Rust core (via WASM) is the single source of truth
+ * for all model state and history. React holds NO authoritative model state and
+ * NO undo stack — `state` here is a render cache derived from the core, and
+ * undo/redo walk the core's event-log cursor. The only UI-owned data is node
+ * positions (view-only, never part of the event log).
+ */
 export default function App() {
   const [state, setState] = useState<GraphState | null>(null);
   const [coreReady, setCoreReady] = useState(false);
   const [mode, setMode] = useState<'select' | 'add_edge'>('select');
   const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d');
-  const undoStackRef = useRef<GraphState[]>([]);
-  const redoStackRef = useRef<GraphState[]>([]);
+  // Derived from the core's undo/redo cursor — never from a local stack.
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const edgeSourceRef = useRef<string | null>(null);
@@ -37,7 +45,25 @@ export default function App() {
   const [proposalLoading, setProposalLoading] = useState(false);
 
   // ── POI counter ───────────────────────────────────────────────────
-  let poiCounterRef = useRef(0);
+  const poiCounterRef = useRef(0);
+
+  // ── Refresh the render cache + history cursor from the core ────────
+  // This is the ONLY way state becomes visible: read it back from the core
+  // after every mutation. canUndo/canRedo come straight from the cursor.
+
+  const refreshState = useCallback(async () => {
+    if (!coreReady) return;
+    try {
+      const freshState = await loadState();
+      setState(freshState);
+      setEntityState(getEntityState());
+      const { current_seq, total_events } = coreUndoRedoStatus();
+      setCanUndo(current_seq > 0);
+      setCanRedo(current_seq < total_events);
+    } catch {
+      /* keep current cache */
+    }
+  }, [coreReady]);
 
   // ── Init: load from WASM core (fallback to mock) ──────────────────
 
@@ -46,150 +72,146 @@ export default function App() {
     async function init() {
       try {
         const graphState = await loadState();
-        if (!cancelled) {
-          setState(graphState);
-          setCoreReady(true);
-          // Load entity state
-          try {
-            const es = getEntityState();
-            setEntityState(es);
-          } catch { /* entity state unavailable */ }
+        if (cancelled) return;
+        setState(graphState);
+        setCoreReady(true);
+        try {
+          setEntityState(getEntityState());
+        } catch {
+          /* entity state unavailable */
+        }
+        try {
+          const { current_seq, total_events } = coreUndoRedoStatus();
+          setCanUndo(current_seq > 0);
+          setCanRedo(current_seq < total_events);
+        } catch {
+          /* status unavailable */
         }
       } catch {
-        // WASM unavailable — fall back to mock data
+        // WASM unavailable — fall back to mock data (view-only, no core truth).
         console.warn('WASM core unavailable, using mock data');
-        if (!cancelled) {
-          setState(loadMockState());
-        }
+        if (!cancelled) setState(loadMockState());
       }
     }
     init();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // ── Refresh all state from core ───────────────────────────────────
+  // ── Undo/redo — delegate to the core event log (INV-1/INV-5) ──────
 
-  const refreshState = useCallback(async () => {
+  const handleUndo = useCallback(async () => {
     if (!coreReady) return;
-    try {
-      const freshState = await loadState();
-      setState(freshState);
-      const es = getEntityState();
-      setEntityState(es);
-    } catch { /* keep current state */ }
-  }, [coreReady]);
+    const r = coreUndo(1);
+    if (!r.ok) {
+      console.warn('Undo failed:', r.error);
+      return;
+    }
+    await refreshState();
+  }, [coreReady, refreshState]);
 
-  // ── Undo/redo ─────────────────────────────────────────────────────
+  const handleRedo = useCallback(async () => {
+    if (!coreReady) return;
+    const r = coreRedo(1);
+    if (!r.ok) {
+      console.warn('Redo failed:', r.error);
+      return;
+    }
+    await refreshState();
+  }, [coreReady, refreshState]);
 
-  const pushUndo = useCallback((prev: GraphState) => {
-    undoStackRef.current.push(prev);
-    redoStackRef.current = [];
-    setCanUndo(true);
-    setCanRedo(false);
-  }, []);
-
-  const handleUndo = useCallback(() => {
-    const stack = undoStackRef.current;
-    if (stack.length === 0 || !state) return;
-    const prev = stack.pop()!;
-    redoStackRef.current.push(state);
-    setState(prev);
-    setCanUndo(stack.length > 0);
-    setCanRedo(true);
-  }, [state]);
-
-  const handleRedo = useCallback(() => {
-    const stack = redoStackRef.current;
-    if (stack.length === 0 || !state) return;
-    const next = stack.pop()!;
-    undoStackRef.current.push(state);
-    setState(next);
-    setCanRedo(stack.length > 0);
-    setCanUndo(true);
-  }, [state]);
-
-  // ── State change — sends topology commands to WASM core ───────────
+  // ── Structural / position changes ─────────────────────────────────
+  // Structural diffs (new nodes/edges) go through the core; node positions
+  // are view-only and stay in the position cache (not the event log).
 
   const handleStateChange = useCallback(
     async (newState: GraphState) => {
       if (!state) return;
-      pushUndo(state);
-      setState(newState);
 
-      // If core is ready, sync topology changes to WASM
+      // Persist UI-only positions (never part of the core model).
+      for (const room of newState.rooms) {
+        setPosition(room.node_id, room.x, room.y);
+      }
+
       if (!coreReady) {
+        setState(newState);
         setMode('select');
         edgeSourceRef.current = null;
         return;
       }
 
+      let structural = false;
       try {
         for (const room of newState.rooms) {
-          const oldRoom = state.rooms.find((r) => r.node_id === room.node_id);
-          if (!oldRoom) {
-            await executeCommand({ CreateNode: { node_id: room.node_id, label: room.label } });
-            setPosition(room.node_id, room.x, room.y);
+          if (!state.rooms.find((r) => r.node_id === room.node_id)) {
+            const res = executeCoreCommand({ CreateNode: { node_id: room.node_id, label: room.label } });
+            if (res.ok) {
+              setPosition(room.node_id, room.x, room.y);
+              structural = true;
+            }
           }
         }
         for (const edge of newState.edges) {
-          const oldEdge = state.edges.find(
-            (e) => e.from_node === edge.from_node && e.to_node === edge.to_node,
-          );
-          if (!oldEdge) {
-            await executeCommand({
+          if (!state.edges.find((e) => e.from_node === edge.from_node && e.to_node === edge.to_node)) {
+            const res = executeCoreCommand({
               CreateEdge: {
                 from_node: edge.from_node,
                 to_node: edge.to_node,
                 bidirectional: edge.bidirectional,
               },
             });
+            if (res.ok) structural = true;
           }
         }
       } catch (err) {
         console.warn('Core sync failed:', err);
       }
 
+      if (structural) {
+        // Structural change landed in the event log — re-read the truth.
+        await refreshState();
+      } else {
+        // Position-only change — keep the optimistic view cache.
+        setState(newState);
+      }
+
       setMode('select');
       edgeSourceRef.current = null;
     },
-    [state, pushUndo, coreReady],
+    [state, coreReady, refreshState],
   );
 
-  // ── Toggle edge ───────────────────────────────────────────────────
+  // ── Toggle edge direction (core-true: remove + recreate flipped) ──
 
   const handleToggleEdge = useCallback(
-    (from: string, to: string) => {
+    async (from: string, to: string) => {
       if (!state) return;
-      const edges = state.edges.map((e) => {
-        if (e.from_node === from && e.to_node === to) {
-          return { ...e, bidirectional: !e.bidirectional };
-        }
-        return e;
-      });
-      const found = state.edges.some((e) => e.from_node === from && e.to_node === to);
-      if (found) {
-        pushUndo(state);
-        setState({ ...state, edges });
+      const edge = state.edges.find((e) => e.from_node === from && e.to_node === to);
+      if (!edge) return;
+
+      if (!coreReady) {
+        setState({
+          ...state,
+          edges: state.edges.map((e) =>
+            e.from_node === from && e.to_node === to ? { ...e, bidirectional: !e.bidirectional } : e,
+          ),
+        });
+        return;
       }
-    },
-    [state, pushUndo],
-  );
 
-  // ── Edge label ───────────────────────────────────────────────────
-
-  const handleLabelEdge = useCallback(
-    (from: string, to: string, label: string) => {
-      if (!state) return;
-      pushUndo(state);
-      const edges = state.edges.map((e) => {
-        if (e.from_node === from && e.to_node === to) {
-          return { ...e, label: label || undefined };
-        }
-        return e;
+      const r1 = executeCoreCommand({ RemoveEdge: { from_node: from, to_node: to } });
+      if (!r1.ok) {
+        console.warn('RemoveEdge failed:', r1.error);
+        return;
+      }
+      const r2 = executeCoreCommand({
+        CreateEdge: { from_node: from, to_node: to, bidirectional: !edge.bidirectional },
       });
-      setState({ ...state, edges });
+      if (!r2.ok) console.warn('CreateEdge failed:', r2.error);
+      await refreshState();
     },
-    [state, pushUndo],
+    [state, coreReady, refreshState],
   );
 
   // ── Node click (add_edge mode) ────────────────────────────────────
@@ -197,61 +219,58 @@ export default function App() {
   const handleNodeClick = useCallback(
     (nodeId: string) => {
       if (!state) return;
-      if (mode === 'add_edge') {
-        if (!edgeSourceRef.current) {
-          edgeSourceRef.current = nodeId;
-        } else if (edgeSourceRef.current !== nodeId) {
-          const from = edgeSourceRef.current;
-          const to = nodeId;
-          const exists = state.edges.some(
-            (e) => e.from_node === from && e.to_node === to,
-          );
-          if (!exists) {
-            const newEdge = { from_node: from, to_node: to, bidirectional: true };
-            pushUndo(state);
-            setState({
-              ...state,
-              edges: [...state.edges, newEdge],
-            });
-            if (coreReady) {
-              executeCommand({
-                CreateEdge: { from_node: from, to_node: to, bidirectional: true },
-              }).catch((err) => console.warn('Core sync failed:', err));
-            }
+      if (mode !== 'add_edge') return;
+      if (!edgeSourceRef.current) {
+        edgeSourceRef.current = nodeId;
+        return;
+      }
+      if (edgeSourceRef.current === nodeId) return;
+      const from = edgeSourceRef.current;
+      const to = nodeId;
+      const exists = state.edges.some((e) => e.from_node === from && e.to_node === to);
+      if (!exists) {
+        if (coreReady) {
+          const r = executeCoreCommand({ CreateEdge: { from_node: from, to_node: to, bidirectional: true } });
+          if (r.ok) {
+            refreshState();
+          } else {
+            console.warn('CreateEdge failed:', r.error);
           }
-          edgeSourceRef.current = null;
-          setMode('select');
+        } else {
+          setState({ ...state, edges: [...state.edges, { from_node: from, to_node: to, bidirectional: true }] });
         }
       }
+      edgeSourceRef.current = null;
+      setMode('select');
     },
-    [mode, state, pushUndo, coreReady],
+    [mode, state, coreReady, refreshState],
   );
 
   // ── Node select (POI editor) ──────────────────────────────────────
 
-  const handleNodeSelect = useCallback((nodeId: string | null) => {
-    if (mode === 'add_edge') {
-      // In add_edge mode, treat as edge endpoint selection
-      if (nodeId) handleNodeClick(nodeId);
-      return;
-    }
-    setSelectedNodeId(nodeId);
-    // Refresh entity state
-    if (coreReady && nodeId) {
-      try {
-        const es = getEntityState();
-        setEntityState(es);
-      } catch { /* ignore */ }
-    }
-  }, [mode, handleNodeClick, coreReady]);
+  const handleNodeSelect = useCallback(
+    (nodeId: string | null) => {
+      if (mode === 'add_edge') {
+        if (nodeId) handleNodeClick(nodeId);
+        return;
+      }
+      setSelectedNodeId(nodeId);
+      if (coreReady && nodeId) {
+        try {
+          setEntityState(getEntityState());
+        } catch {
+          /* ignore */
+        }
+      }
+    },
+    [mode, handleNodeClick, coreReady],
+  );
 
-  // ── POI operations ────────────────────────────────────────────────
+  // ── POI operations (already core-routed; refresh re-reads truth) ──
 
   const handleAttachPoi = useCallback(
     (nodeId: string, poiId: string, entityRef: string | null) => {
-      executeCoreCommand({
-        AttachPOI: { node_id: nodeId, poi_id: poiId, entity_ref: entityRef ?? null },
-      });
+      executeCoreCommand({ AttachPOI: { node_id: nodeId, poi_id: poiId, entity_ref: entityRef ?? null } });
       refreshState();
     },
     [refreshState],
@@ -259,9 +278,7 @@ export default function App() {
 
   const handleDetachPoi = useCallback(
     (nodeId: string, poiId: string) => {
-      executeCoreCommand({
-        DetachPOI: { node_id: nodeId, poi_id: poiId },
-      });
+      executeCoreCommand({ DetachPOI: { node_id: nodeId, poi_id: poiId } });
       refreshState();
     },
     [refreshState],
@@ -269,9 +286,7 @@ export default function App() {
 
   const handleSetField = useCallback(
     (instanceId: string, field: string, value: unknown) => {
-      executeCoreCommand({
-        SetEntityField: { instance_id: instanceId, field, value },
-      });
+      executeCoreCommand({ SetEntityField: { instance_id: instanceId, field, value } });
       refreshState();
     },
     [refreshState],
@@ -282,31 +297,18 @@ export default function App() {
       poiCounterRef.current++;
       const instanceId = `inst-${poiCounterRef.current}-${poiId}`;
 
-      // Create instance
-      const r1 = executeCoreCommand({
-        CreateEntityInstance: { entity_type: entityType, instance_id: instanceId },
-      });
+      const r1 = executeCoreCommand({ CreateEntityInstance: { entity_type: entityType, instance_id: instanceId } });
       if (!r1.ok) {
         console.warn('CreateEntityInstance failed:', r1.error);
         return;
       }
-
-      // Set fields
       for (const [field, value] of Object.entries(fields)) {
         if (value) {
-          executeCoreCommand({
-            SetEntityField: { instance_id: instanceId, field, value },
-          });
+          executeCoreCommand({ SetEntityField: { instance_id: instanceId, field, value } });
         }
       }
-
-      // Attach POI
-      const r2 = executeCoreCommand({
-        AttachPOI: { node_id: nodeId, poi_id: poiId, entity_ref: instanceId },
-      });
-      if (!r2.ok) {
-        console.warn('AttachPOI failed:', r2.error);
-      }
+      const r2 = executeCoreCommand({ AttachPOI: { node_id: nodeId, poi_id: poiId, entity_ref: instanceId } });
+      if (!r2.ok) console.warn('AttachPOI failed:', r2.error);
 
       refreshState();
     },
@@ -330,45 +332,38 @@ export default function App() {
   }, []);
 
   const handleAcceptProposals = useCallback(async () => {
-    if (!proposals || !state) return;
-    const newCommands = [...proposals];
+    if (!proposals) return;
+    const cmds = [...proposals];
     setProposals(null);
-    for (const cmd of newCommands) {
-      try {
-        const updatedState = await executeCommand(cmd);
-        setState(updatedState);
-      } catch (err) {
-        console.warn('Command execution failed:', err);
-      }
+    for (const cmd of cmds) {
+      const r = executeCoreCommand(cmd);
+      if (!r.ok) console.warn('Command execution failed:', r.error);
     }
-    if (coreReady) {
-      try {
-        const freshState = await loadState();
-        setState(freshState);
-      } catch { /* keep current state */ }
-    }
-  }, [proposals, state, coreReady]);
+    await refreshState();
+  }, [proposals, refreshState]);
 
   const handleRejectProposals = useCallback(() => {
     setProposals(null);
   }, []);
 
-  const handleAcceptSingle = useCallback(async (cmd: Record<string, unknown>) => {
-    if (!state) return;
-    try {
-      const updatedState = await executeCommand(cmd);
-      setState(updatedState);
+  const handleAcceptSingle = useCallback(
+    async (cmd: Record<string, unknown>) => {
+      const r = executeCoreCommand(cmd);
+      if (!r.ok) {
+        console.warn('Command execution failed:', r.error);
+        return;
+      }
       setProposals((prev) => prev?.filter((c) => c !== cmd) ?? null);
-    } catch (err) {
-      console.warn('Command execution failed:', err);
-    }
-  }, [state]);
+      await refreshState();
+    },
+    [refreshState],
+  );
 
   const handleRejectSingle = useCallback((cmd: Record<string, unknown>) => {
     setProposals((prev) => prev?.filter((c) => c !== cmd) ?? null);
   }, []);
 
-  // ── v1.4: Save/Load ──────────────────────────────────────────────
+  // ── Save/Load ─────────────────────────────────────────────────────
 
   const handleSave = useCallback(() => {
     try {
@@ -396,31 +391,30 @@ export default function App() {
       if (!file) return;
       try {
         const text = await file.text();
-        const newState = await loadProject(text);
-        // Reset undo/redo stacks
-        undoStackRef.current = [];
-        redoStackRef.current = [];
-        setCanUndo(false);
-        setCanRedo(false);
-        setState(newState);
-        // Refresh entity state
-        if (coreReady) {
-          const es = getEntityState();
-          setEntityState(es);
-        }
+        await loadProject(text);
+        // History cursor + state come straight back from the core.
+        await refreshState();
       } catch (err) {
         console.warn('Load failed:', err);
       }
     };
     input.click();
-  }, [coreReady]);
+  }, [refreshState]);
 
   // ── Loading state ─────────────────────────────────────────────────
 
   if (!state) {
     return (
       <div className="app">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#94a3b8' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            height: '100vh',
+            color: 'var(--wb-text-secondary)',
+          }}
+        >
           Loading core...
         </div>
       </div>
@@ -429,9 +423,7 @@ export default function App() {
 
   // ── Selected node for POI editor ──────────────────────────────────
 
-  const selectedNode = selectedNodeId
-    ? state.rooms.find((r) => r.node_id === selectedNodeId) ?? null
-    : null;
+  const selectedNode = selectedNodeId ? state.rooms.find((r) => r.node_id === selectedNodeId) ?? null : null;
 
   // ── Render ────────────────────────────────────────────────────────
 
@@ -465,7 +457,6 @@ export default function App() {
             state={state}
             onStateChange={handleStateChange}
             onToggleEdge={handleToggleEdge}
-            onLabelEdge={handleLabelEdge}
             onNodeSelect={handleNodeSelect}
           />
         ) : (
