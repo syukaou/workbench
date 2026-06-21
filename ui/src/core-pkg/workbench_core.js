@@ -134,6 +134,13 @@ export function undo_redo_status() {
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
+        __wbg___wbindgen_throw_ea4887a5f8f9a9db: function(arg0, arg1) {
+            throw new Error(getStringFromWasm0(arg0, arg1));
+        },
+        __wbg_now_d2e0afbad4edbe82: function() {
+            const ret = Date.now();
+            return ret;
+        },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
             // Cast intrinsic for `Ref(String) -> Externref`.
             const ret = getStringFromWasm0(arg0, arg1);
