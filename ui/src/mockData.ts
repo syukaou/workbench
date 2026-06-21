@@ -5,12 +5,14 @@
  * UI positions (x, y) are managed locally in React state.
  */
 import type { GraphState, RoomNode, EdgeDef, EntityState, EntityTypeInfo, EntityInstanceInfo } from './types';
-import { ensureCore, getCoreState, executeCoreCommand, proposeViaCore, exportCoreSnapshot, importCoreSnapshot, coreUndo, coreRedo, coreUndoRedoStatus } from './coreBridge';
+import { ensureCore, getCoreState, executeCoreCommand, proposeViaCore, exportCoreSnapshot, importCoreSnapshot, coreUndo, coreRedo, coreUndoRedoStatus, isCoreReady } from './coreBridge';
 
 // Re-export executeCoreCommand for direct use by App
 export { executeCoreCommand };
 // Re-export core-as-truth undo/redo (event-log cursor) for App.
 export { coreUndo, coreRedo, coreUndoRedoStatus };
+// Re-export the core-readiness probe so callers can no-op before init.
+export { isCoreReady };
 
 // ── Local position store (not in core) ───────────────────────────────
 
@@ -193,7 +195,9 @@ export async function requestProposal(intent: string): Promise<ProposalResult> {
     const cmds = await proposeViaHttp(intent);
     if (cmds.length > 0) return { commands: cmds, source: 'http' };
   } catch {
-    console.warn('HTTP proposal server unavailable, trying WASM mock...');
+    // Not an error: the UI already surfaces this as the "using local mock" hint
+    // (P3), so keep it as an info-level breadcrumb rather than a warning.
+    console.info('HTTP proposal server unavailable, trying WASM mock...');
   }
 
   // 2) Fall back to WASM mock (keyword-based proposal generator).

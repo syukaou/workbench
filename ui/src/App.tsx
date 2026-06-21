@@ -17,6 +17,7 @@ import {
   coreUndo,
   coreRedo,
   coreUndoRedoStatus,
+  isCoreReady,
 } from './mockData';
 import type { GraphState, EntityState } from './types';
 import './App.css';
@@ -126,7 +127,11 @@ export default function App() {
   // ── Undo/redo — delegate to the core event log (INV-1/INV-5) ──────
 
   const handleUndo = useCallback(async () => {
-    if (!coreReady) return;
+    // Guard on the module-level core flag too: across HMR / early load the
+    // React `coreReady` state can be stale (true) while the freshly reloaded
+    // WASM module isn't initialized yet. No-op cleanly instead of logging
+    // "Undo failed: Core not initialized." Does not change core semantics.
+    if (!coreReady || !isCoreReady()) return;
     const r = coreUndo(1);
     if (!r.ok) {
       console.warn('Undo failed:', r.error);
@@ -136,7 +141,7 @@ export default function App() {
   }, [coreReady, refreshState]);
 
   const handleRedo = useCallback(async () => {
-    if (!coreReady) return;
+    if (!coreReady || !isCoreReady()) return;
     const r = coreRedo(1);
     if (!r.ok) {
       console.warn('Redo failed:', r.error);
