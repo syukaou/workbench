@@ -12,8 +12,10 @@ interface Props {
   /** Re-bind a POI to an existing entity instance (detach + attach in core). */
   onBindPoiEntity: (nodeId: string, poiId: string, entityRef: string | null) => void;
   onSetField: (instanceId: string, field: string, value: unknown) => void;
-  onCreateEntityType: (name: string) => void;
-  onCreateEntityInstance: (entityType: string, instanceId: string) => void;
+  /** Returns the core result so the form can surface a visible error. */
+  onCreateEntityType: (name: string) => { ok: boolean; error?: string };
+  /** Returns the core result so the form can surface a visible error. */
+  onCreateEntityInstance: (entityType: string, instanceId: string) => { ok: boolean; error?: string };
   onRemoveNode: (nodeId: string) => void;
   onRemoveEdge: (from: string, to: string) => void;
   /** Deselect the current node. */
@@ -111,6 +113,7 @@ function NodePanel({
 }: NodePanelProps) {
   const [newPoiId, setNewPoiId] = useState('');
   const [newPoiRef, setNewPoiRef] = useState('');
+  const [poiError, setPoiError] = useState<string | null>(null);
 
   const incidentEdges = edges.filter(
     (e) => e.from_node === node.node_id || e.to_node === node.node_id,
@@ -118,11 +121,19 @@ function NodePanel({
 
   const handleAddPoi = useCallback(() => {
     const id = newPoiId.trim();
-    if (!id) return;
+    if (!id) {
+      setPoiError('POI id cannot be empty.');
+      return;
+    }
+    if (node.pois.some((p) => p.poi_id === id)) {
+      setPoiError(`POI id "${id}" already exists on this node.`);
+      return;
+    }
     onAttachPoi(node.node_id, id, newPoiRef || null);
     setNewPoiId('');
     setNewPoiRef('');
-  }, [node.node_id, newPoiId, newPoiRef, onAttachPoi]);
+    setPoiError(null);
+  }, [node.node_id, node.pois, newPoiId, newPoiRef, onAttachPoi]);
 
   return (
     <div className="sb-block">
@@ -200,10 +211,19 @@ function NodePanel({
             type="text"
             placeholder="e.g. boss-spawn"
             value={newPoiId}
-            onChange={(e) => setNewPoiId(e.target.value)}
+            aria-invalid={!!poiError}
+            onChange={(e) => {
+              setNewPoiId(e.target.value);
+              if (poiError) setPoiError(null);
+            }}
             onKeyDown={(e) => e.key === 'Enter' && handleAddPoi()}
           />
         </div>
+        {poiError && (
+          <div className="sb-field-error" role="alert">
+            {poiError}
+          </div>
+        )}
         <div className="poi-add-row">
           <label className="poi-add-label">Bind entity (optional)</label>
           <select
@@ -259,8 +279,8 @@ function NodePanel({
 
 interface EntityManagerProps {
   entityState: EntityState;
-  onCreateEntityType: (name: string) => void;
-  onCreateEntityInstance: (entityType: string, instanceId: string) => void;
+  onCreateEntityType: (name: string) => { ok: boolean; error?: string };
+  onCreateEntityInstance: (entityType: string, instanceId: string) => { ok: boolean; error?: string };
   onSetField: (instanceId: string, field: string, value: unknown) => void;
 }
 
@@ -273,21 +293,51 @@ function EntityManager({
   const [newTypeName, setNewTypeName] = useState('');
   const [newInstType, setNewInstType] = useState('');
   const [newInstId, setNewInstId] = useState('');
+  const [typeError, setTypeError] = useState<string | null>(null);
+  const [instError, setInstError] = useState<string | null>(null);
 
   const handleCreateType = useCallback(() => {
     const name = newTypeName.trim();
-    if (!name) return;
-    onCreateEntityType(name);
+    if (!name) {
+      setTypeError('Type name cannot be empty.');
+      return;
+    }
+    if (entityState.types.some((t) => t.name === name)) {
+      setTypeError(`Type "${name}" already exists.`);
+      return;
+    }
+    const r = onCreateEntityType(name);
+    if (!r.ok) {
+      setTypeError(r.error ?? 'Could not create type.');
+      return;
+    }
     setNewTypeName('');
-  }, [newTypeName, onCreateEntityType]);
+    setTypeError(null);
+  }, [newTypeName, entityState.types, onCreateEntityType]);
 
   const handleCreateInstance = useCallback(() => {
     const type = newInstType || entityState.types[0]?.name;
     const id = newInstId.trim();
-    if (!type || !id) return;
-    onCreateEntityInstance(type, id);
+    if (!id) {
+      setInstError('Instance id cannot be empty.');
+      return;
+    }
+    if (!type) {
+      setInstError('Define an entity type first.');
+      return;
+    }
+    if (entityState.instances.some((i) => i.instance_id === id)) {
+      setInstError(`Instance id "${id}" already exists.`);
+      return;
+    }
+    const r = onCreateEntityInstance(type, id);
+    if (!r.ok) {
+      setInstError(r.error ?? 'Could not create instance.');
+      return;
+    }
     setNewInstId('');
-  }, [newInstType, newInstId, entityState.types, onCreateEntityInstance]);
+    setInstError(null);
+  }, [newInstType, newInstId, entityState.types, entityState.instances, onCreateEntityInstance]);
 
   return (
     <div className="sb-block">
@@ -302,10 +352,19 @@ function EntityManager({
             type="text"
             placeholder="e.g. Boss"
             value={newTypeName}
-            onChange={(e) => setNewTypeName(e.target.value)}
+            aria-invalid={!!typeError}
+            onChange={(e) => {
+              setNewTypeName(e.target.value);
+              if (typeError) setTypeError(null);
+            }}
             onKeyDown={(e) => e.key === 'Enter' && handleCreateType()}
           />
         </div>
+        {typeError && (
+          <div className="sb-field-error" role="alert">
+            {typeError}
+          </div>
+        )}
         <div className="poi-add-actions">
           <button className="poi-add-btn" onClick={handleCreateType} disabled={!newTypeName.trim()}>
             ＋ Type
@@ -336,10 +395,19 @@ function EntityManager({
               type="text"
               placeholder="instance id, e.g. boss-1"
               value={newInstId}
-              onChange={(e) => setNewInstId(e.target.value)}
+              aria-invalid={!!instError}
+              onChange={(e) => {
+                setNewInstId(e.target.value);
+                if (instError) setInstError(null);
+              }}
               onKeyDown={(e) => e.key === 'Enter' && handleCreateInstance()}
             />
           </div>
+          {instError && (
+            <div className="sb-field-error" role="alert">
+              {instError}
+            </div>
+          )}
           <div className="poi-add-actions">
             <button className="poi-add-btn" onClick={handleCreateInstance} disabled={!newInstId.trim()}>
               ＋ Instance
@@ -349,7 +417,9 @@ function EntityManager({
       )}
 
       {/* ── Browse types ──────────────────────────────────────────── */}
-      {entityState.types.length > 0 && (
+      {entityState.types.length === 0 ? (
+        <div className="poi-editor-empty">No entity types yet.</div>
+      ) : (
         <div className="sb-list">
           <div className="poi-add-label">Types ({entityState.types.length})</div>
           {entityState.types.map((t) => (

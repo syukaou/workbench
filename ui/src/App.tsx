@@ -54,6 +54,9 @@ export default function App() {
   // ── AI Proposal state ──────────────────────────────────────────────
   const [proposals, setProposals] = useState<Record<string, unknown>[] | null>(null);
   const [proposalLoading, setProposalLoading] = useState(false);
+  // Which source produced the current proposals — drives the "using local mock"
+  // hint when the real AI server is down. UI-only, not core truth.
+  const [proposalSource, setProposalSource] = useState<'http' | 'mock' | null>(null);
 
   // ── Save/Load UX ────────────────────────────────────────────────────
   // Project name is UI-only metadata stored in the save wrapper, not core
@@ -405,26 +408,30 @@ export default function App() {
     [refreshState],
   );
 
+  // These two return the core result so the sidebar can surface a visible
+  // validation hint (e.g. duplicate id) instead of failing silently.
   const handleCreateEntityType = useCallback(
-    (name: string) => {
+    (name: string): { ok: boolean; error?: string } => {
       const r = executeCoreCommand({ CreateEntityType: { name } });
       if (!r.ok) {
         console.warn('CreateEntityType failed:', r.error);
-        return;
+        return r;
       }
       refreshState();
+      return r;
     },
     [refreshState],
   );
 
   const handleCreateEntityInstance = useCallback(
-    (entityType: string, instanceId: string) => {
+    (entityType: string, instanceId: string): { ok: boolean; error?: string } => {
       const r = executeCoreCommand({ CreateEntityInstance: { entity_type: entityType, instance_id: instanceId } });
       if (!r.ok) {
         console.warn('CreateEntityInstance failed:', r.error);
-        return;
+        return r;
       }
       refreshState();
+      return r;
     },
     [refreshState],
   );
@@ -434,9 +441,11 @@ export default function App() {
   const handlePropose = useCallback(async (intent: string) => {
     setProposalLoading(true);
     setProposals(null);
+    setProposalSource(null);
     try {
-      const cmds = await requestProposal(intent);
-      setProposals(cmds);
+      const { commands, source } = await requestProposal(intent);
+      setProposals(commands);
+      setProposalSource(source);
     } catch (err) {
       console.warn('Proposal failed:', err);
       setProposals([]);
@@ -601,6 +610,7 @@ export default function App() {
         canRedo={canRedo}
         proposals={proposals}
         proposalLoading={proposalLoading}
+        proposalSource={proposalSource}
         onPropose={handlePropose}
         onAcceptAll={handleAcceptProposals}
         onRejectAll={handleRejectProposals}

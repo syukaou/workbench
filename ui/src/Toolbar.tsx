@@ -17,6 +17,8 @@ interface Props {
   // AI Proposal
   proposals: Record<string, unknown>[] | null;
   proposalLoading: boolean;
+  /** Source of the current proposals — 'mock' shows a "using local mock" hint. */
+  proposalSource: 'http' | 'mock' | null;
   onPropose: (intent: string) => void;
   onAcceptAll: () => void;
   onRejectAll: () => void;
@@ -56,7 +58,7 @@ function describeCommand(cmd: Record<string, unknown>): string {
 export default function Toolbar({
   state, onStateChange, canUndo, canRedo, onUndo, onRedo, mode, onSetMode,
   viewMode, onToggleView,
-  proposals, proposalLoading, onPropose, onAcceptAll, onRejectAll,
+  proposals, proposalLoading, proposalSource, onPropose, onAcceptAll, onRejectAll,
   onAcceptSingle, onRejectSingle, onSave, onLoad,
   projectName, onProjectNameChange, coreReady,
 }: Props) {
@@ -189,10 +191,23 @@ export default function Toolbar({
             className="proposal-btn"
             onClick={handleProposeClick}
             disabled={proposalLoading || intentText.trim().length === 0}
+            aria-busy={proposalLoading}
           >
-            {proposalLoading ? '⏳' : '✨'} Propose
+            {proposalLoading ? (
+              <>
+                <span className="proposal-spinner" aria-hidden="true" /> Proposing…
+              </>
+            ) : (
+              <>✨ Propose</>
+            )}
           </button>
         </div>
+        {/* The AI server isn't up — proposals came from the local keyword mock. */}
+        {!proposalLoading && proposalSource === 'mock' && (
+          <div className="proposal-source-note" role="status">
+            using local mock — start the AI server for real proposals
+          </div>
+        )}
       </div>
 
       {/* ── Proposal Results Panel ──────────────────────────────────── */}

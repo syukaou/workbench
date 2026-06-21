@@ -308,6 +308,32 @@
   cursor: not-allowed;
 }
 
+/* Inline spinner shown while a proposal is in flight (button → "Proposing…"). */
+.proposal-spinner {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  margin-right: 2px;
+  vertical-align: -1px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: proposal-spin 0.7s linear infinite;
+}
+
+@keyframes proposal-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* "using local mock" hint — the AI server isn't up; calm, low-key. */
+.proposal-source-note {
+  margin-top: var(--wb-space-1);
+  font-size: var(--wb-fs-xs);
+  color: var(--wb-warning);
+}
+
 /* ── Proposal Results Panel ──────────────────────────────────────── */
 
 .proposal-panel {
@@ -619,6 +645,13 @@
   font-size: var(--wb-fs-sm);
   color: var(--wb-text-muted);
   text-align: center;
+}
+
+/* Inline form validation hint (empty name / duplicate id) — visible, not silent. */
+.sb-field-error {
+  margin: 2px 0 var(--wb-space-1);
+  font-size: var(--wb-fs-xs);
+  color: var(--wb-error);
 }
 
 /* ── POI item ───────────────────────────────────────────────────── */
