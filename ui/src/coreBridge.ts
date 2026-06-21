@@ -13,11 +13,18 @@ let initPromise: Promise<void> | null = null;
 export async function ensureCore(): Promise<void> {
   if (ready) return;
   if (!initPromise) {
-    initPromise = init(wasmUrl).then(() => {
+    // wasm-bindgen's init() takes a single options object; the positional-URL
+    // form is deprecated (logs a console warning on every load).
+    initPromise = init({ module_or_path: wasmUrl }).then(() => {
       ready = true;
     });
   }
   return initPromise;
+}
+
+/** Whether the WASM core has finished initializing (module-level truth). */
+export function isCoreReady(): boolean {
+  return ready;
 }
 
 /** Get the current core state as a parsed JSON object. */

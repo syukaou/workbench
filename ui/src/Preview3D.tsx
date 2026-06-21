@@ -11,23 +11,73 @@ interface Props {
   state: GraphState;
 }
 
-/** Pick node color based on marks / POI presence. */
-function nodeColor(room: RoomNode): number {
+/**
+ * Numeric color palette for the 3D scene, mirrored from the single token source
+ * (design-system/tokens.css). Three.js needs numeric hex, so we read the `--wb-*`
+ * custom properties once via getComputedStyle and convert through THREE.Color —
+ * no second palette, the 2D canvas and this preview track the same tokens.
+ * `exit`/`poi` have no token equivalent and stay 3D-local accents (noted below).
+ */
+interface Palette {
+  bg: number;          // --wb-bg-canvas (scene background + fog)
+  text: string;        // --wb-text (CSS string for CSS2D node labels)
+  nodeBoss: number;    // --wb-error
+  nodeTreasure: number;// --wb-warning
+  nodeStart: number;   // --wb-success
+  nodeExit: number;    // cyan — 3D-local accent, no token equivalent
+  nodePoi: number;     // teal — 3D-local accent, no token equivalent
+  nodeDefault: number; // --wb-text-muted
+  edgeBi: number;      // --wb-edge-bi (bidirectional, mirrors 2D canvas)
+  edgeUni: number;     // --wb-edge-uni (one-way, mirrors 2D canvas)
+  gridMajor: number;   // --wb-border-strong (grid floor major lines)
+  gridMinor: number;   // --wb-border (grid floor minor lines)
+  scrim: string;       // --wb-bg-canvas @ 0.85 (CSS string, edge-label backdrop)
+}
+
+/** Read the design tokens once and convert to a numeric Three.js palette. */
+function readPalette(): Palette {
+  const css = getComputedStyle(document.documentElement);
+  const num = (name: string) => new THREE.Color(css.getPropertyValue(name).trim()).getHex();
+  const str = (name: string) => css.getPropertyValue(name).trim();
+  const canvas = new THREE.Color(css.getPropertyValue('--wb-bg-canvas').trim());
+  const rgb = (c: THREE.Color) => `${Math.round(c.r * 255)}, ${Math.round(c.g * 255)}, ${Math.round(c.b * 255)}`;
+  return {
+    bg: num('--wb-bg-canvas'),
+    text: str('--wb-text'),
+    nodeBoss: num('--wb-error'),
+    nodeTreasure: num('--wb-warning'),
+    nodeStart: num('--wb-success'),
+    nodeExit: 0x06b6d4, // cyan — 3D-local accent (no token equivalent)
+    nodePoi: 0x14b8a6,  // teal — 3D-local accent (no token equivalent)
+    nodeDefault: num('--wb-text-muted'),
+    edgeBi: num('--wb-edge-bi'),
+    edgeUni: num('--wb-edge-uni'),
+    gridMajor: num('--wb-border-strong'),
+    gridMinor: num('--wb-border'),
+    scrim: `rgba(${rgb(canvas)}, 0.85)`,
+  };
+}
+
+/** Numeric Three.js color → CSS hex string (for CSS2D label text). */
+const hexCss = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
+
+/** Pick node color based on marks / POI presence (mapped to design tokens). */
+function nodeColor(room: RoomNode, p: Palette): number {
   const marks = room.marks.map((m) => m.toLowerCase());
   const hasPois = room.pois.length > 0;
 
-  // Boss / enemy rooms → red-ish
-  if (marks.some((m) => m.includes('boss') || m.includes('enemy'))) return 0xef4444;
-  // Treasure / loot rooms → gold
-  if (marks.some((m) => m.includes('treasure') || m.includes('loot') || m.includes('item'))) return 0xf59e0b;
-  // Start / spawn rooms → green
-  if (marks.some((m) => m.includes('start') || m.includes('spawn') || m.includes('entrance'))) return 0x22c55e;
-  // Exit / goal rooms → cyan
-  if (marks.some((m) => m.includes('exit') || m.includes('goal') || m.includes('end'))) return 0x06b6d4;
-  // Occupied rooms (has POIs) → teal
-  if (hasPois) return 0x14b8a6;
-  // Default → slate
-  return 0x64748b;
+  // Boss / enemy rooms → error
+  if (marks.some((m) => m.includes('boss') || m.includes('enemy'))) return p.nodeBoss;
+  // Treasure / loot rooms → warning
+  if (marks.some((m) => m.includes('treasure') || m.includes('loot') || m.includes('item'))) return p.nodeTreasure;
+  // Start / spawn rooms → success
+  if (marks.some((m) => m.includes('start') || m.includes('spawn') || m.includes('entrance'))) return p.nodeStart;
+  // Exit / goal rooms → cyan accent
+  if (marks.some((m) => m.includes('exit') || m.includes('goal') || m.includes('end'))) return p.nodeExit;
+  // Occupied rooms (has POIs) → teal accent
+  if (hasPois) return p.nodePoi;
+  // Default → muted
+  return p.nodeDefault;
 }
 
 /** Build a small arrow cone mesh at tip position, pointing along direction. */
@@ -51,10 +101,13 @@ export default function Preview3D({ state }: Props) {
     const container = containerRef.current;
     if (!container) return;
 
+    // Read the design tokens once (single token source — DESIGN §2).
+    const palette = readPalette();
+
     // ── Scene setup ──────────────────────────────────────────────
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0f172a);
-    scene.fog = new THREE.Fog(0x0f172a, 20, 80);
+    scene.background = new THREE.Color(palette.bg);
+    scene.fog = new THREE.Fog(palette.bg, 20, 80);
 
     const w = container.clientWidth;
     const h = container.clientHeight;
@@ -97,7 +150,7 @@ export default function Preview3D({ state }: Props) {
     scene.add(hemi);
 
     // ── Grid floor ───────────────────────────────────────────────
-    const grid = new THREE.GridHelper(40, 40, 0x334155, 0x1e293b);
+    const grid = new THREE.GridHelper(40, 40, palette.gridMajor, palette.gridMinor);
     scene.add(grid);
 
     // ── Node group ───────────────────────────────────────────────
@@ -124,7 +177,7 @@ export default function Preview3D({ state }: Props) {
       );
       nodePos3.set(room.node_id, pos);
 
-      const color = nodeColor(room);
+      const color = nodeColor(room, palette);
       const hasPois = room.pois.length > 0;
 
       // Box for rooms, cylinder for rooms with POIs
@@ -149,7 +202,7 @@ export default function Preview3D({ state }: Props) {
       // Label above node
       const labelDiv = document.createElement('div');
       labelDiv.textContent = room.label;
-      labelDiv.style.color = '#e2e8f0';
+      labelDiv.style.color = palette.text; // --wb-text
       labelDiv.style.fontSize = '10px';
       labelDiv.style.fontWeight = '600';
       labelDiv.style.fontFamily = 'system-ui, sans-serif';
@@ -170,7 +223,7 @@ export default function Preview3D({ state }: Props) {
       const to = nodePos3.get(edge.to_node);
       if (!from || !to) continue;
 
-      const color = edge.bidirectional ? 0x3b82f6 : 0xf59e0b;
+      const color = edge.bidirectional ? palette.edgeBi : palette.edgeUni;
 
       // Line segment (raised slightly above nodes)
       const mid = new THREE.Vector3().addVectors(from, to).multiplyScalar(0.5);
@@ -201,11 +254,15 @@ export default function Preview3D({ state }: Props) {
       if (edge.label) {
         const labelDiv = document.createElement('div');
         labelDiv.textContent = edge.label;
-        labelDiv.style.color = color === 0x3b82f6 ? '#93c5fd' : '#fcd34d';
+        // Label text: a lightened tint of the edge hue. The raw edge token is a
+        // neutral stroke color — too low-contrast as 9px text on the dark scrim
+        // (WCAG AA) — so lerp toward --wb-text (stays token-derived) for legibility.
+        const labelHue = new THREE.Color(color).lerp(new THREE.Color(palette.text), 0.55).getHex();
+        labelDiv.style.color = hexCss(labelHue);
         labelDiv.style.fontSize = '9px';
         labelDiv.style.fontWeight = '600';
         labelDiv.style.fontFamily = 'system-ui, sans-serif';
-        labelDiv.style.background = 'rgba(15, 23, 42, 0.85)';
+        labelDiv.style.background = palette.scrim; // --wb-bg-canvas @ 0.85
         labelDiv.style.padding = '1px 6px';
         labelDiv.style.borderRadius = '4px';
         labelDiv.style.whiteSpace = 'nowrap';
