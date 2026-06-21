@@ -254,8 +254,11 @@ export default function Preview3D({ state }: Props) {
       if (edge.label) {
         const labelDiv = document.createElement('div');
         labelDiv.textContent = edge.label;
-        // Label text matches its edge hue (edgeBi / edgeUni tokens).
-        labelDiv.style.color = hexCss(color);
+        // Label text: a lightened tint of the edge hue. The raw edge token is a
+        // neutral stroke color — too low-contrast as 9px text on the dark scrim
+        // (WCAG AA) — so lerp toward --wb-text (stays token-derived) for legibility.
+        const labelHue = new THREE.Color(color).lerp(new THREE.Color(palette.text), 0.55).getHex();
+        labelDiv.style.color = hexCss(labelHue);
         labelDiv.style.fontSize = '9px';
         labelDiv.style.fontWeight = '600';
         labelDiv.style.fontFamily = 'system-ui, sans-serif';
