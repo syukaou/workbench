@@ -316,12 +316,22 @@ fn fold_projection(
 }
 
 /// Get the current time in milliseconds since Unix epoch.
+///
+/// Timestamps are event metadata only — the fold/projection and undo cursor
+/// never depend on them. On `wasm32-unknown-unknown` there is no system clock,
+/// so `SystemTime::now()` panics (`unreachable`); use the JS `Date` clock there.
+#[cfg(not(target_arch = "wasm32"))]
 fn timestamp_ms() -> i64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64
+}
+
+#[cfg(target_arch = "wasm32")]
+fn timestamp_ms() -> i64 {
+    js_sys::Date::now() as i64
 }
 
 #[cfg(test)]
