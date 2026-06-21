@@ -424,18 +424,29 @@ fn inv4_inv7_core_source_has_no_external_io() {
     let tcp_listener = ["Tcp", "Listener"].concat();
     let udp_socket = ["Udp", "Socket"].concat();
 
-    // read_dir is intentionally non-recursive: it covers every top-level source
-    // file in core/src, which is where the deterministic core lives.
-    for entry in fs::read_dir(src_dir).expect("core/src must be readable") {
-        let path = entry.unwrap().path();
-        if path.extension().and_then(|e| e.to_str()) != Some("rs") {
-            continue;
+    // Recursively collect every .rs file under core/src. INV-4 governs the whole
+    // `core` crate ("无网络" in the core crate), so the scan must include nested
+    // modules and the bin/ target, not just the top-level files — a violation
+    // could hide in a subdirectory or a new binary just as easily.
+    let mut rs_files: Vec<std::path::PathBuf> = Vec::new();
+    let mut stack = vec![std::path::PathBuf::from(src_dir)];
+    while let Some(dir) = stack.pop() {
+        for entry in fs::read_dir(&dir).expect("core/src must be readable") {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+                rs_files.push(path);
+            }
         }
+    }
+
+    for path in &rs_files {
         let file_name = path.file_name().unwrap().to_str().unwrap().to_string();
         if ALLOWLIST.contains(&file_name.as_str()) {
             continue;
         }
-        let source = fs::read_to_string(&path).unwrap();
+        let source = fs::read_to_string(path).unwrap();
 
         assert!(
             !(source.contains(&process_import) && source.contains(&constructor_call)),
