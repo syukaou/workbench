@@ -15,10 +15,18 @@
 #   4. the /work rule: on any red-line conflict, `block` the card — never hack.
 # It pushes a feature branch only; it never merges to main (that stays gated).
 #
-# Usage: scripts/run-worker.sh <card_id>
+# Usage: scripts/run-worker.sh <card_id> [board]
 set -euo pipefail
 
-ID="${1:?usage: run-worker.sh <card_id>}"
+ID="${1:?usage: run-worker.sh <card_id> [board]}"
+
+# Which Kanban board to claim from. Defaults to the Stage-1 board; pass a
+# Stage-2 board (e.g. workbench-harden / workbench-feature) as the 2nd arg.
+# The /work skill reads the ambient board from HERMES_KANBAN_BOARD, and the
+# Hermes CLI honors it per-process, so concurrent workers on different boards
+# never race on board selection.
+BOARD="${2:-workbench-mvp}"
+export HERMES_KANBAN_BOARD="$BOARD"
 
 # Daemon-spawned shells get a minimal PATH; ensure the toolchain is reachable.
 export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
