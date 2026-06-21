@@ -4,6 +4,7 @@ import { proposalsToOverlay, type Overlay } from './proposalOverlay';
 import Preview3D from './Preview3D';
 import Toolbar from './Toolbar';
 import Sidebar from './Sidebar';
+import EmptyState from './EmptyState';
 import {
   loadState,
   loadMockState,
@@ -53,6 +54,19 @@ export default function App() {
   // ── AI Proposal state ──────────────────────────────────────────────
   const [proposals, setProposals] = useState<Record<string, unknown>[] | null>(null);
   const [proposalLoading, setProposalLoading] = useState(false);
+
+  // ── Save/Load UX ────────────────────────────────────────────────────
+  // Project name is UI-only metadata stored in the save wrapper, not core
+  // state. `notice` is a transient, auto-dismissing banner for load/save
+  // feedback (never a persisted truth).
+  const [projectName, setProjectName] = useState('');
+  const [notice, setNotice] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), 4000);
+    return () => clearTimeout(t);
+  }, [notice]);
 
   // ── Refresh the render cache + history cursor from the core ────────
   // This is the ONLY way state becomes visible: read it back from the core
@@ -467,20 +481,33 @@ export default function App() {
 
   const handleSave = useCallback(() => {
     try {
-      const json = buildProjectSave();
+      // Determine the project name: reuse the current one, else ask (defaulting
+      // to "untitled"). Cancelling the prompt aborts the save.
+      let name = projectName.trim();
+      if (!name) {
+        const entered = window.prompt('Project name', 'untitled');
+        if (entered === null) return;
+        name = entered.trim() || 'untitled';
+        setProjectName(name);
+      }
+      const json = buildProjectSave(name);
+      // Derive the download filename from the name, keeping it filesystem-safe.
+      const slug = name.replace(/[^\p{L}\p{N}._-]+/gu, '-').replace(/^-+|-+$/g, '') || 'untitled';
       const blob = new Blob([json], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'project.workbench.json';
+      a.download = `${slug}.workbench.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      setNotice({ kind: 'success', text: `Saved “${name}”` });
     } catch (err) {
       console.warn('Save failed:', err);
+      setNotice({ kind: 'error', text: 'Save failed — see console for details.' });
     }
-  }, []);
+  }, [projectName]);
 
   const handleLoad = useCallback(() => {
     const input = document.createElement('input');
@@ -491,15 +518,41 @@ export default function App() {
       if (!file) return;
       try {
         const text = await file.text();
-        await loadProject(text);
+        // Rebuild goes through import_snapshot → event-log replay (red line).
+        const { name } = await loadProject(text);
         // History cursor + state come straight back from the core.
         await refreshState();
+        if (name) setProjectName(name);
+        setNotice({ kind: 'success', text: `Loaded “${name ?? file.name}”` });
       } catch (err) {
         console.warn('Load failed:', err);
+        setNotice({ kind: 'error', text: 'Load failed — file may be invalid.' });
       }
     };
     input.click();
   }, [refreshState]);
+
+  // ── Empty-state quick actions ─────────────────────────────────────
+  // Both route through existing core-backed paths; the empty card itself
+  // writes nothing.
+
+  const handleAddRoom = useCallback(() => {
+    if (!state) return;
+    const id = `room-${Date.now()}`;
+    handleStateChange({
+      ...state,
+      rooms: [
+        ...state.rooms,
+        { node_id: id, label: `Room ${state.rooms.length + 1}`, x: 400, y: 300, marks: [], pois: [] },
+      ],
+    });
+  }, [state, handleStateChange]);
+
+  const handleFocusPropose = useCallback(() => {
+    const el = document.querySelector('.proposal-input') as HTMLInputElement | null;
+    el?.focus();
+    el?.scrollIntoView({ block: 'nearest' });
+  }, []);
 
   // ── AI proposal overlay (INV-3) — hook must run unconditionally ────
   // React requires hooks in the same order every render, so this useMemo lives
@@ -563,6 +616,11 @@ export default function App() {
         onLoad={handleLoad}
         coreReady={coreReady}
       />
+      {notice && (
+        <div className={`app-notice app-notice--${notice.kind}`} role="status">
+          {notice.text}
+        </div>
+      )}
       <div className="main-area">
         {viewMode === '2d' ? (
           <TopologyGraph
@@ -579,6 +637,9 @@ export default function App() {
           />
         ) : (
           <Preview3D state={state} />
+        )}
+        {viewMode === '2d' && state.rooms.length === 0 && (
+          <EmptyState onAddRoom={handleAddRoom} onFocusPropose={handleFocusPropose} />
         )}
         {viewMode === '2d' && (
           <Sidebar

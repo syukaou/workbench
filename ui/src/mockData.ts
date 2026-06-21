@@ -284,11 +284,16 @@ export function importPositions(data: Record<string, { x: number; y: number }>):
   nextAutoY = 200;
 }
 
-/** Build a full project save file: core snapshot + UI positions. */
-export function buildProjectSave(): string {
+/**
+ * Build a full project save file: core snapshot + UI positions + project name.
+ * `name` is UI-only metadata (not core design state) so it lives in the save
+ * wrapper alongside the UI-only positions, never inside the event log.
+ */
+export function buildProjectSave(name: string): string {
   const coreSnapshot = JSON.parse(exportCoreSnapshot());
   const positions = exportPositions();
   const project = {
+    name,
     ...coreSnapshot,
     positions,
     savedAt: new Date().toISOString(),
@@ -296,8 +301,12 @@ export function buildProjectSave(): string {
   return JSON.stringify(project, null, 2);
 }
 
-/** Restore a project from a save file. Returns the new GraphState. */
-export async function loadProject(jsonStr: string): Promise<GraphState> {
+/**
+ * Restore a project from a save file. Returns the rebuilt GraphState plus the
+ * saved project name (null if the file predates named saves). Rebuild always
+ * goes through import_snapshot → event-log replay (red line: no second truth).
+ */
+export async function loadProject(jsonStr: string): Promise<{ state: GraphState; name: string | null }> {
   const project = JSON.parse(jsonStr);
 
   // Restore positions first
@@ -319,7 +328,8 @@ export async function loadProject(jsonStr: string): Promise<GraphState> {
 
   // Re-read state from core
   const coreState = getCoreState();
-  return coreStateToGraphState(coreState);
+  const name = typeof project.name === 'string' && project.name.trim() ? project.name : null;
+  return { state: coreStateToGraphState(coreState), name };
 }
 
 // ── Fallback mock (for when WASM is unavailable) ─────────────────────
