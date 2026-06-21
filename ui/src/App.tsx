@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import TopologyGraph from './TopologyGraph';
 import { proposalsToOverlay, type Overlay } from './proposalOverlay';
 import Preview3D from './Preview3D';
@@ -35,7 +35,16 @@ export default function App() {
   // Derived from the core's undo/redo cursor — never from a local stack.
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
-  const edgeSourceRef = useRef<string | null>(null);
+  // The first-picked node in add_edge mode (the edge's source). State, not a
+  // ref, so the canvas can highlight it and show a "click another node" hint.
+  const [edgeSource, setEdgeSource] = useState<string | null>(null);
+
+  // Mode switching clears any half-started edge: leaving add_edge must drop the
+  // pending source so re-entering starts clean.
+  const handleSetMode = useCallback((m: 'select' | 'add_edge') => {
+    setMode(m);
+    if (m !== 'add_edge') setEdgeSource(null);
+  }, []);
 
   // ── POI Editor state ──────────────────────────────────────────────
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -119,6 +128,43 @@ export default function App() {
     await refreshState();
   }, [coreReady, refreshState]);
 
+  // ── Global keyboard flow ──────────────────────────────────────────
+  // Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y redo (reusing the
+  // core-routed handlers), Esc cancels a half-started edge. Never fire while a
+  // text field is focused — typing must not trigger undo/redo (INV: writes only
+  // through the explicit handlers, this just invokes them).
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const editable =
+        !!target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable);
+
+      if (e.key === 'Escape' && !editable) {
+        if (mode === 'add_edge') {
+          handleSetMode('select');
+        }
+        return;
+      }
+
+      if (editable) return;
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod) return;
+      const key = e.key.toLowerCase();
+      if (key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      } else if ((key === 'z' && e.shiftKey) || key === 'y') {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [mode, handleSetMode, handleUndo, handleRedo]);
+
   // ── Structural / position changes ─────────────────────────────────
   // Structural diffs (new nodes/edges) go through the core; node positions
   // are view-only and stay in the position cache (not the event log).
@@ -135,7 +181,7 @@ export default function App() {
       if (!coreReady) {
         setState(newState);
         setMode('select');
-        edgeSourceRef.current = null;
+        setEdgeSource(null);
         return;
       }
 
@@ -175,7 +221,7 @@ export default function App() {
       }
 
       setMode('select');
-      edgeSourceRef.current = null;
+      setEdgeSource(null);
     },
     [state, coreReady, refreshState],
   );
@@ -261,12 +307,13 @@ export default function App() {
     (nodeId: string) => {
       if (!state) return;
       if (mode !== 'add_edge') return;
-      if (!edgeSourceRef.current) {
-        edgeSourceRef.current = nodeId;
+      if (!edgeSource) {
+        // First pick = the edge source; highlight it and prompt for the target.
+        setEdgeSource(nodeId);
         return;
       }
-      if (edgeSourceRef.current === nodeId) return;
-      const from = edgeSourceRef.current;
+      if (edgeSource === nodeId) return;
+      const from = edgeSource;
       const to = nodeId;
       const exists = state.edges.some((e) => e.from_node === from && e.to_node === to);
       if (!exists) {
@@ -281,10 +328,10 @@ export default function App() {
           setState({ ...state, edges: [...state.edges, { from_node: from, to_node: to, bidirectional: true }] });
         }
       }
-      edgeSourceRef.current = null;
+      setEdgeSource(null);
       setMode('select');
     },
-    [mode, state, coreReady, refreshState],
+    [mode, state, edgeSource, coreReady, refreshState],
   );
 
   // ── Node select (POI editor) ──────────────────────────────────────
@@ -500,7 +547,7 @@ export default function App() {
         onUndo={handleUndo}
         onRedo={handleRedo}
         mode={mode}
-        onSetMode={setMode}
+        onSetMode={handleSetMode}
         viewMode={viewMode}
         onToggleView={() => setViewMode((v) => (v === '2d' ? '3d' : '2d'))}
         canUndo={canUndo}
@@ -527,6 +574,8 @@ export default function App() {
             onMarkNode={handleMarkNode}
             onNodeSelect={handleNodeSelect}
             overlay={proposalOverlay}
+            mode={mode}
+            edgeSource={edgeSource}
           />
         ) : (
           <Preview3D state={state} />
