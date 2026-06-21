@@ -462,7 +462,7 @@ export default function App() {
   // time; this NEVER writes core — accepting dispatches each command through the
   // core. The value is only consumed once state is non-null.
   const proposalOverlay = useMemo<Overlay>(
-    () => (state ? proposalsToOverlay(proposals ?? [], state) : { nodes: [], edges: [] }),
+    () => (state ? proposalsToOverlay(proposals ?? [], state) : { rooms: [], edges: [] }),
     [proposals, state],
   );
 
