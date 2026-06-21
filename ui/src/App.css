@@ -20,6 +20,88 @@
   display: flex;
   flex: 1;
   overflow: hidden;
+  position: relative;
+}
+
+/* ── Load/Save feedback banner ─────────────────────────────────────────── */
+
+.app-notice {
+  position: absolute;
+  top: var(--wb-space-3);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  padding: var(--wb-space-2) var(--wb-space-4);
+  border-radius: var(--wb-radius);
+  border: 1px solid var(--wb-border-strong);
+  background: var(--wb-bg-card);
+  color: var(--wb-text);
+  font-size: var(--wb-fs-sm);
+  font-weight: var(--wb-fw-medium);
+  box-shadow: var(--wb-shadow-2);
+}
+
+.app-notice--success {
+  border-color: var(--wb-success);
+  background: var(--wb-success-soft);
+  color: var(--wb-success);
+}
+
+.app-notice--error {
+  border-color: var(--wb-error);
+  background: var(--wb-error-soft);
+  color: var(--wb-error);
+}
+
+/* ── Empty-canvas guidance card ────────────────────────────────────────── */
+
+.empty-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.empty-state-card {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--wb-space-3);
+  max-width: 380px;
+  padding: var(--wb-space-6);
+  text-align: center;
+  border: 1px solid var(--wb-border-strong);
+  border-radius: var(--wb-radius-lg);
+  background: var(--wb-bg-card);
+  box-shadow: var(--wb-shadow-pop);
+}
+
+.empty-state-icon {
+  font-size: var(--wb-fs-xl);
+}
+
+.empty-state-title {
+  margin: 0;
+  font-size: var(--wb-fs-lg);
+  font-weight: var(--wb-fw-semibold);
+  color: var(--wb-text);
+}
+
+.empty-state-body {
+  margin: 0;
+  font-size: var(--wb-fs-sm);
+  line-height: var(--wb-lh-normal);
+  color: var(--wb-text-secondary);
+}
+
+.empty-state-actions {
+  display: flex;
+  gap: var(--wb-space-2);
+  margin-top: var(--wb-space-1);
 }
 
 .main-area .topology-graph {

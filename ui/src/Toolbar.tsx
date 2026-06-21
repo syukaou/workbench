@@ -25,6 +25,9 @@ interface Props {
   // v1.4: Save/Load
   onSave: () => void;
   onLoad: () => void;
+  // Editable project name (shown in the top bar, used as the save filename).
+  projectName: string;
+  onProjectNameChange: (name: string) => void;
   coreReady: boolean;
 }
 
@@ -54,7 +57,8 @@ export default function Toolbar({
   state, onStateChange, canUndo, canRedo, onUndo, onRedo, mode, onSetMode,
   viewMode, onToggleView,
   proposals, proposalLoading, onPropose, onAcceptAll, onRejectAll,
-  onAcceptSingle, onRejectSingle, onSave, onLoad, coreReady,
+  onAcceptSingle, onRejectSingle, onSave, onLoad,
+  projectName, onProjectNameChange, coreReady,
 }: Props) {
   const [intentText, setIntentText] = useState('');
   const [showProposals, setShowProposals] = useState(false);
@@ -105,6 +109,24 @@ export default function Toolbar({
     <>
       <div className="toolbar">
         <h2 className="toolbar-title">Workbench Topology</h2>
+        <input
+          className="nodrag"
+          value={projectName}
+          placeholder="untitled"
+          onChange={(e) => onProjectNameChange(e.target.value)}
+          aria-label="Project name (used as the save filename)"
+          title="Project name — used as the .workbench.json filename"
+          style={{
+            background: 'var(--wb-bg-inset)',
+            border: '1px solid var(--wb-border)',
+            borderRadius: 'var(--wb-radius-sm)',
+            color: 'var(--wb-text)',
+            font: 'inherit',
+            fontSize: 'var(--wb-fs-sm)',
+            padding: '3px 8px',
+            width: '150px',
+          }}
+        />
         <div className="toolbar-buttons">
           <Button title="Add a new room" onClick={handleAddRoom}>
             ＋ Add Room
