@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -31,14 +31,25 @@ interface Props {
   onNodeSelect: (nodeId: string | null) => void;
   /** AI proposal preview (pending nodes/edges) — render-only, never committed (INV-3). */
   overlay?: Overlay;
+  /** Current canvas mode — drives the add-edge hint banner. */
+  mode?: 'select' | 'add_edge';
+  /** In add_edge mode, the first-picked node (edge source) to highlight. */
+  edgeSource?: string | null;
 }
 
 const EMPTY_OVERLAY: Overlay = { rooms: [], edges: [] };
 
 const nodeTypes = { poiNode: PoiNode };
 
+interface RoomsToNodesOpts {
+  markingNodeId: string | null;
+  edgeSource: string | null;
+  onSubmitMark: (nodeId: string, mark: string) => void;
+  onCancelMark: () => void;
+}
+
 /** Convert U3 rooms to React Flow nodes. */
-function roomsToNodes(rooms: RoomNode[]): Node[] {
+function roomsToNodes(rooms: RoomNode[], opts: RoomsToNodesOpts): Node[] {
   return rooms.map((r) => ({
     id: r.node_id,
     type: 'poiNode',
@@ -48,6 +59,12 @@ function roomsToNodes(rooms: RoomNode[]): Node[] {
       marks: r.marks,
       pois: r.pois,
       pending: r.pending ?? false,
+      // Inline semantic-mark input (replaces window.prompt); commit still flows
+      // through onMarkNode → executeCoreCommand({ MarkNode }).
+      marking: opts.markingNodeId === r.node_id,
+      isEdgeSource: opts.edgeSource === r.node_id,
+      onSubmitMark: opts.onSubmitMark,
+      onCancelMark: opts.onCancelMark,
     },
   }));
 }
@@ -107,20 +124,41 @@ export default function TopologyGraph({
   onMarkNode,
   onNodeSelect,
   overlay = EMPTY_OVERLAY,
+  mode = 'select',
+  edgeSource = null,
 }: Props) {
+  // Which node currently shows its inline mark input (right-click target).
+  const [markingNodeId, setMarkingNodeId] = useState<string | null>(null);
+
+  const handleSubmitMark = useCallback(
+    (nodeId: string, mark: string) => {
+      const trimmed = mark.trim();
+      if (trimmed) onMarkNode(nodeId, trimmed);
+      setMarkingNodeId(null);
+    },
+    [onMarkNode],
+  );
+
+  const handleCancelMark = useCallback(() => setMarkingNodeId(null), []);
+
+  const nodeOpts = useMemo<RoomsToNodesOpts>(
+    () => ({ markingNodeId, edgeSource, onSubmitMark: handleSubmitMark, onCancelMark: handleCancelMark }),
+    [markingNodeId, edgeSource, handleSubmitMark, handleCancelMark],
+  );
+
   // Render = committed projection + pending AI overlay (INV-3). The overlay is
   // composed at render time only; the editing handlers below still operate on
   // the committed `state` and skip pending items, so a preview never reaches core.
   const view = useMemo(() => composeView(state, overlay), [state, overlay]);
   const viewRoomIds = useMemo(() => new Set(view.rooms.map((r) => r.node_id)), [view]);
-  const [nodes, setNodes, onNodesChangeRF] = useNodesState(roomsToNodes(view.rooms));
+  const [nodes, setNodes, onNodesChangeRF] = useNodesState(roomsToNodes(view.rooms, nodeOpts));
   const [edges, setEdges, onEdgesChangeRF] = useEdgesState(edgesToRFEdges(view.edges, viewRoomIds));
 
   // Sync external state changes back into React Flow internal state
   useMemo(() => {
-    setNodes(roomsToNodes(view.rooms));
+    setNodes(roomsToNodes(view.rooms, nodeOpts));
     setEdges(edgesToRFEdges(view.edges, viewRoomIds));
-  }, [view, viewRoomIds, setNodes, setEdges]);
+  }, [view, viewRoomIds, nodeOpts, setNodes, setEdges]);
 
   const onConnect = useCallback(
     (connection: Connection) => {
@@ -184,15 +222,15 @@ export default function TopologyGraph({
     [onRemoveEdge],
   );
 
-  // Right-click a node → tag it with a semantic mark (spawn, shortcut, …).
+  // Right-click a node → open its in-app inline mark input (no native prompt).
+  // The actual write still goes through onMarkNode → core when submitted.
   const onNodeContext: NodeMouseHandler = useCallback(
     (event, node) => {
       event.preventDefault();
       if (node.data?.pending) return; // can't mark a not-yet-accepted proposal node
-      const mark = window.prompt(`Mark for "${node.id}" (e.g. spawn, shortcut):`)?.trim();
-      if (mark) onMarkNode(node.id, mark);
+      setMarkingNodeId(node.id);
     },
-    [onMarkNode],
+    [],
   );
 
   const onPaneClick = useCallback(
@@ -231,6 +269,13 @@ export default function TopologyGraph({
 
   return (
     <div className="topology-graph" style={{ width: '100%', height: 'calc(100vh - 56px)' }}>
+      {mode === 'add_edge' && (
+        <div className="edge-hint" role="status">
+          {edgeSource
+            ? 'Click another node to connect · Esc to cancel'
+            : 'Click a node to start an edge · Esc to cancel'}
+        </div>
+      )}
       <ReactFlow
         nodes={nodes}
         edges={edges}

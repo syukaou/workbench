@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import type { POI } from './types';
 
@@ -7,6 +8,43 @@ interface PoiNodeData {
   pois: POI[];
   /** AI proposal not yet accepted — rendered dashed + weakened (INV-3). */
   pending?: boolean;
+  /** Show the inline semantic-mark input (replaces the old window.prompt). */
+  marking?: boolean;
+  /** Edge source picked in add_edge mode — highlight as the pending source. */
+  isEdgeSource?: boolean;
+  /** Commit a mark (routed to core via onMarkNode upstream). */
+  onSubmitMark?: (nodeId: string, mark: string) => void;
+  /** Dismiss the inline mark input without writing. */
+  onCancelMark?: () => void;
+}
+
+/** Inline input for tagging a node with a semantic mark. */
+function MarkInput({ nodeId, onSubmit, onCancel }: {
+  nodeId: string;
+  onSubmit: (nodeId: string, mark: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState('');
+  return (
+    <input
+      // nodrag: typing/clicking here must not drag the node.
+      className="poi-node-mark-input nodrag"
+      autoFocus
+      placeholder="mark (e.g. spawn)"
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      // Stop React Flow / global shortcuts (Delete, Ctrl+Z) seeing these keys.
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') {
+          onSubmit(nodeId, value);
+        } else if (e.key === 'Escape') {
+          onCancel();
+        }
+      }}
+      onBlur={onCancel}
+    />
+  );
 }
 
 /** Derive a compact label from POI ids (e.g. "Boss", "Item×2"). */
@@ -31,14 +69,21 @@ function derivePoiLabel(pois: POI[]): string | null {
   return entries.slice(0, 2).map(([n, c]) => fmt(n, c)).join(', ');
 }
 
-export default function PoiNode({ data, selected }: NodeProps<PoiNodeData>) {
-  const { label, marks, pois, pending } = data;
+export default function PoiNode({ id, data, selected }: NodeProps<PoiNodeData>) {
+  const { label, marks, pois, pending, marking, isEdgeSource, onSubmitMark, onCancelMark } = data;
   const badgeLabel = derivePoiLabel(pois);
 
   return (
-    <div className={`poi-node ${pending ? 'pending' : ''} ${selected ? 'selected' : ''}`}>
+    <div
+      className={`poi-node ${pending ? 'pending' : ''} ${selected ? 'selected' : ''} ${
+        isEdgeSource ? 'edge-source' : ''
+      }`}
+    >
       <Handle type="target" position={Position.Top} />
       <div className="poi-node-label">{label}</div>
+      {marking && onSubmitMark && onCancelMark && (
+        <MarkInput nodeId={id} onSubmit={onSubmitMark} onCancel={onCancelMark} />
+      )}
       {marks.length > 0 && (
         <div className="poi-node-marks">
           {marks.map((m) => (
