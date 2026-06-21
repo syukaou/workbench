@@ -481,15 +481,9 @@ export default function App() {
 
   const handleSave = useCallback(() => {
     try {
-      // Determine the project name: reuse the current one, else ask (defaulting
-      // to "untitled"). Cancelling the prompt aborts the save.
-      let name = projectName.trim();
-      if (!name) {
-        const entered = window.prompt('Project name', 'untitled');
-        if (entered === null) return;
-        name = entered.trim() || 'untitled';
-        setProjectName(name);
-      }
+      // Project name comes from the editable top-bar field (no jarring
+      // window.prompt — consistent with the inline mark input). Empty → untitled.
+      const name = projectName.trim() || 'untitled';
       const json = buildProjectSave(name);
       // Derive the download filename from the name, keeping it filesystem-safe.
       const slug = name.replace(/[^\p{L}\p{N}._-]+/gu, '-').replace(/^-+|-+$/g, '') || 'untitled';
@@ -614,6 +608,8 @@ export default function App() {
         onRejectSingle={handleRejectSingle}
         onSave={handleSave}
         onLoad={handleLoad}
+        projectName={projectName}
+        onProjectNameChange={setProjectName}
         coreReady={coreReady}
       />
       {notice && (
