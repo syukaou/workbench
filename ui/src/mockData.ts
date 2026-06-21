@@ -173,15 +173,25 @@ export function setEntityField(instance_id: string, field: string, value: unknow
 
 const PROPOSE_URL = 'http://localhost:5198/propose';
 
+/** Where a proposal came from: the real AI HTTP server, or a local keyword mock. */
+export type ProposalSource = 'http' | 'mock';
+
+export interface ProposalResult {
+  commands: Record<string, unknown>[];
+  source: ProposalSource;
+}
+
 /**
  * Request topology proposals via HTTP (real AI via CLI server).
  * Falls back to WASM mock, then to a local mock if everything fails.
+ * The returned `source` lets the UI tell the user when it's running on a mock
+ * (the AI server isn't up) — this is transient UI metadata, never core truth.
  */
-export async function requestProposal(intent: string): Promise<Record<string, unknown>[]> {
+export async function requestProposal(intent: string): Promise<ProposalResult> {
   // 1) Try the native HTTP proposal server (real AI via opencode CLI).
   try {
     const cmds = await proposeViaHttp(intent);
-    if (cmds.length > 0) return cmds;
+    if (cmds.length > 0) return { commands: cmds, source: 'http' };
   } catch {
     console.warn('HTTP proposal server unavailable, trying WASM mock...');
   }
@@ -189,13 +199,13 @@ export async function requestProposal(intent: string): Promise<Record<string, un
   // 2) Fall back to WASM mock (keyword-based proposal generator).
   try {
     await ensureCore();
-    return proposeViaCore(intent);
+    return { commands: proposeViaCore(intent), source: 'mock' };
   } catch {
     console.warn('WASM core unavailable for proposal, using local mock');
   }
 
   // 3) Last resort: local JavaScript mock (same keyword logic).
-  return mockProposeLocal(intent);
+  return { commands: mockProposeLocal(intent), source: 'mock' };
 }
 
 /**
