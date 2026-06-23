@@ -382,6 +382,113 @@ fn inv4_inv7_core_has_no_llm_http_render_deps() {
     );
 }
 
+#[test]
+fn inv4_inv7_core_source_has_no_external_io() {
+    // The Cargo.toml scan above only catches forbidden *crate names*. It does
+    // NOT catch deterministic-boundary violations written directly against std —
+    // e.g. spawning an external LLM CLI via std::process, or binding a
+    // network listener via std::net. Those concerns belong OUTSIDE core (the
+    // app/sidecar layer), per INV-4. This test scans every .rs file under
+    // core/src for those source-level patterns so a NEW violation — in a file
+    // that does not even exist yet — still trips CI. It mirrors the source-scan
+    // style of inv6_core_modules_not_publicly_reachable.
+    use std::fs;
+
+    // ── KNOWN-DEFERRED ALLOWLIST ─────────────────────────────────────
+    // These are the deferred cli_bridge / cli_server INV-4 violations: the
+    // external-LLM-CLI bridge (std::process spawn) and its local TCP
+    // server (std::net) still live in core, tracked for migration OUT of core
+    // to the app/sidecar layer. This allowlist MUST shrink to empty when that
+    // migration lands, and NO new file may EVER be added to it — adding a file
+    // here to silence the scan is itself a red-line breach.
+    const ALLOWLIST: [&str; 2] = ["cli_bridge.rs", "cli_server.rs"];
+
+    let src_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/src");
+
+    // Build the forbidden needles at runtime so the literal patterns do not
+    // appear contiguously in THIS file, which is itself one of the scanned
+    // sources — otherwise the guardrail would flag its own test code.
+    //
+    // External-process spawn is detected robustly across aliased / un-aliased /
+    // grouped imports. cli_bridge.rs actually imports Command under an alias via
+    // a grouped use of the std process module (Command + Output together) and
+    // then calls the alias's constructor — so a contiguous "process" + "Command"
+    // literal never appears. We instead require the std process import path AND a
+    // constructor call in the same file. The AND keeps an incidental mention in
+    // a comment from tripping the scan, while still catching both the grouped
+    // form and a plain aliased `use ...Command as Foo; Foo::new(...)`.
+    // (Needles are assembled from fragments so they do not appear contiguously
+    // in this file, which is itself scanned.)
+    let process_import = ["process", "::"].concat(); // the std process import path
+    let constructor_call = ["::", "new("].concat(); // any alias's constructor call
+    let tcp_listener = ["Tcp", "Listener"].concat();
+    let udp_socket = ["Udp", "Socket"].concat();
+
+    // Recursively collect every .rs file under core/src. INV-4 governs the whole
+    // `core` crate ("无网络" in the core crate), so the scan must include nested
+    // modules and the bin/ target, not just the top-level files — a violation
+    // could hide in a subdirectory or a new binary just as easily.
+    let mut rs_files: Vec<std::path::PathBuf> = Vec::new();
+    let mut stack = vec![std::path::PathBuf::from(src_dir)];
+    while let Some(dir) = stack.pop() {
+        for entry in fs::read_dir(&dir).expect("core/src must be readable") {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+                rs_files.push(path);
+            }
+        }
+    }
+
+    for path in &rs_files {
+        let file_name = path.file_name().unwrap().to_str().unwrap().to_string();
+        if ALLOWLIST.contains(&file_name.as_str()) {
+            continue;
+        }
+        let source = fs::read_to_string(path).unwrap();
+
+        assert!(
+            !(source.contains(&process_import) && source.contains(&constructor_call)),
+            "INV-4 VIOLATION: {} imports + constructs the std::process spawn API \
+             (external-process spawn) — the LLM-CLI bridge belongs OUTSIDE the \
+             deterministic core, not in core/src",
+            file_name
+        );
+        assert!(
+            !source.contains(&tcp_listener) && !source.contains(&udp_socket),
+            "INV-4 VIOLATION: {} binds a network listener (std::net) \
+             — networking belongs OUTSIDE the deterministic core, not in core/src",
+            file_name
+        );
+    }
+
+    // ── META: prove the guardrail still bites (cannot rot into a no-op) ──
+    // Exactly the two known-deferred files — silently widening the allowlist
+    // (to exempt a new violator) fails the test.
+    assert_eq!(
+        ALLOWLIST.len(),
+        2,
+        "INV-4 allowlist must contain exactly the two known-deferred files"
+    );
+    assert!(
+        ALLOWLIST.contains(&"cli_bridge.rs") && ALLOWLIST.contains(&"cli_server.rs"),
+        "INV-4 allowlist must be exactly {{cli_bridge.rs, cli_server.rs}}"
+    );
+    // Each allowlisted file must still EXIST under core/src. Once the migration
+    // moves a file out of core, this fails and FORCES dropping the now-stale
+    // exemption — so the allowlist can only ever shrink toward empty.
+    for name in ALLOWLIST {
+        let p = std::path::Path::new(src_dir).join(name);
+        assert!(
+            p.exists(),
+            "INV-4 allowlist names '{}' but it no longer exists under core/src — \
+             the migration moved it; remove it from the allowlist",
+            name
+        );
+    }
+}
+
 // ── INV-5: Event sourcing — replay consistency ───────────────────────
 
 #[test]
