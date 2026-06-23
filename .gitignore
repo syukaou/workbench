@@ -4,3 +4,15 @@ Cargo.lock
 .DS_Store
 node_modules/
 dist/
+
+# Build caches / generated artifacts (machine-specific, never commit)
+.vite/
+*.tsbuildinfo
+pkg/
+
+# Per-card git worktrees created by the autonomous /work fleet
+.worktrees/
+
+# Transient orchestration temp files (commit/PR bodies, card specs)
+.commitmsg
+.pr-body.md

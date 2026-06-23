@@ -4,24 +4,31 @@
 
 MVP：AI 生成关卡拓扑 → 人扩展 POI → POI 挂真实体。
 
-## 开发
+> **新接手?先读根目录 [`AGENTS.md`](AGENTS.md)** —— 运行/构建/测试、开发流程、当前看板状态与下一步都在那里。架构红线见 [`docs/CLAUDE.md`](docs/CLAUDE.md)。
 
-```
-main ← PR only（Hermes 负责合并）
-  └─ U1-event-log       ← 确定性核心 + 事件日志
-  └─ U2-entity-model    ← 本体/实体定义
-  └─ U3-level-topology  ← 关卡拓扑模型
-  └─ U4-topology-graph  ← 拓扑图渲染 + 编辑
-  └─ U5-ai-cli          ← AI-CLI 提议通道
+## 运行
+
+当前是 localhost web 应用(WASM core 跑在浏览器 + 内存 store)：
+
+```bash
+# 前端(默认 http://localhost:5173）
+cd ui && npm install && npm run dev
+
+# 可选：原生 AI 提议服务(localhost:5198，需要它才有真实 AI 提议；否则前端回退到 WASM mock)
+cargo run -p workbench-core --bin workbench-server
 ```
 
-每分支独立开发 → PR 进 main → Hermes review 门控后合并。
+测试 / 闸门：`cargo test --workspace`(含 INV-1..8 不变量测试)+ `cd ui && npm run build`(tsc + vite)。
 
 ## 技术栈
 
-- Core: Rust (`workbench-core`)
-- Shell: Tauri 2.x
-- Frontend: TypeScript + React/Svelte
-- Storage: SQLite + WAL + 手写事件溯源
+- **Core**: Rust (`workbench-core`) — 确定性事件溯源核心,编译成 WASM 在浏览器运行(`ui/src/core-pkg/`,已提交的生成产物);native 构建另有 `workbench-server`。
+- **Frontend**: TypeScript + React + Vite + React Flow(2D 拓扑)+ Three.js(3D 只读预览)。
+- **Store**: 当前内存版(`core/src/memory_store.rs`)。SQLite + Tauri 外壳是**冻结的远期打包目标**,尚未落地(见 `docs/CLAUDE.md` §0.5)。
+- **CI**: GitHub Actions(`.github/workflows/ci.yml`)。
 
-详见 `docs/` 目录。
+## 开发流程
+
+`main` = PR-only + CI 门控。开发由自治 `claude -p /work` worker 在 Hermes Kanban 板上逐卡推进(`scripts/run-worker.sh <card_id> <board>`)。详见 [`AGENTS.md`](AGENTS.md) 与 `docs/WORKFLOW.md`。
+
+更多设计文档见 `docs/` 目录。
